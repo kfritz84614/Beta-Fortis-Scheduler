@@ -1,3 +1,4 @@
+// app.js
 import express from 'express';
 import { readFileSync, writeFileSync } from 'fs';
 import cors from 'cors';
@@ -70,5 +71,5 @@ app.post('/api/chat', async (req, res) => {
   res.json({ reply: json.choices[0].message.content });
 });
 
-// ⚠️ IMPORTANT: Do not listen on a port
+// ⚠️ Do not use app.listen() on Vercel
 export default app;
