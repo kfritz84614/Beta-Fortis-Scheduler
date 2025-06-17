@@ -1,0 +1,68 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Fortis Scheduler</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2rem;
+      background: #f9f9f9;
+    }
+    h1 {
+      color: #2c3e50;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 1rem;
+    }
+    th, td {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+    }
+    th {
+      background: #2c3e50;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>Fortis Weekly Schedule</h1>
+  <table id="schedule-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Working Hours</th>
+        <th>Lunch Time</th>
+        <th>Primary</th>
+        <th>Secondary</th>
+        <th>Tertiary</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    fetch('/api/workers')
+      .then(res => res.json())
+      .then(data => {
+        const tbody = document.querySelector('#schedule-table tbody');
+        data.forEach(worker => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${worker.Name}</td>
+            <td>${worker["Working Hours"]}</td>
+            <td>${worker["Lunch Time"]}</td>
+            <td>${worker["Primary Ability"]}</td>
+            <td>${worker["Secondary Ability"]}</td>
+            <td>${worker["Tertiary Ability"]}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      });
+  </script>
+</body>
+</html>
