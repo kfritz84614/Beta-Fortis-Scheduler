@@ -5,12 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Fortis • Admin</title>
 
-  <!-- Tailwind (CDN) -->
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Flatpickr calendar (CSS & JS) -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <!-- Flatpickr (CSS + JS) — must load before your module -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
 <body class="bg-gray-100 text-slate-800">
@@ -76,8 +77,8 @@
         </div>
 
         <div class="flex justify-end gap-3 pt-2">
-          <button id="save-btn" class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
-          <button id="close-btn" class="bg-gray-400 text-white px-4 py-1 rounded">Cancel</button>
+          <button id="save-btn"   class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+          <button id="close-btn"  class="bg-gray-400 text-white px-4 py-1 rounded">Cancel</button>
         </div>
       </form>
     </dialog>
@@ -93,7 +94,19 @@
 
         <p class="text-sm">
           <span class="inline-block w-3 h-3 bg-amber-400 mr-1 rounded-sm"></span>
-          date has PTO — click to remove / add
+          date has PTO — click to add/remove
         </p>
 
         <button id="ptoClose"
+                class="mt-2 bg-gray-400 text-white px-4 py-1 rounded">
+          Close
+        </button>
+      </div>
+    </dialog>
+
+  </div>
+
+  <!-- Your admin logic (runs after Flatpickr is defined) -->
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
