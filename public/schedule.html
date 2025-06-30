@@ -3,65 +3,70 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fortis • Weekly Schedule (Gantt)</title>
+  <title>Fortis • Weekly Gantt</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* timeline grid --------------------------------------------------- */
-    #grid {
-      display: grid;
-      grid-template-columns: 150px repeat(40, 1fr); /* 5 days × 8 hrs */
-      /* rows will auto-flow via JS */
+    /* grid ----------------------------------------------------------- */
+    #grid{
+      display:grid;
+      grid-template-columns:150px repeat(40,1fr); /* 5 days × 8 hrs */
     }
-    #grid > .rowLabel {
-      grid-column: 1 / 2;
-      background:#f3f4f6;
-      border-bottom:1px solid #ddd;
-      padding:2px 4px;
-      font-size:0.75rem;
-      white-space:nowrap;
-    }
-    #grid > .cell {
-      border-bottom:1px solid #eee;
-      border-right:1px solid #eee;
-      position:relative;
-    }
+    #grid>.rowLabel{grid-column:1;background:#f3f4f6;
+      border-bottom:1px solid #ddd;padding:2px 4px;font-size:.75rem;}
+    #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee;position:relative}
 
-    /* shift block ----------------------------------------------------- */
-    .block {
-      position:absolute;
-      top:2px;  bottom:2px;
-      border-radius:3px;
-      color:#fff; font-size:0.65rem; line-height:1rem;
-      padding-left:4px;
-      cursor:move; user-select:none;
-    }
-    .Reservations { background:#16a34a }
-    .Dispatch     { background:#b91c1c }
-    .Security     { background:#be185d }
-    .Network      { background:#475569 }
-    .Journey\ Desk{ background:#65a30d }
-    .Marketing    { background:#7c3aed }
-    .Sales        { background:#d97706 }
-    .Badges\\/Projects { background:#0ea5e9 }
+    /* shift block ---------------------------------------------------- */
+    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;
+      color:#fff;font-size:.65rem;line-height:1rem;padding-left:4px;cursor:pointer}
+    .Reservations{background:#16a34a}.Dispatch{background:#b91c1c}
+    .Security{background:#be185d}.Network{background:#475569}
+    .Journey\ Desk{background:#65a30d}.Marketing{background:#7c3aed}
+    .Sales{background:#d97706}.Badges\\/Projects{background:#0ea5e9}
 
-    /* selection drag helper ------------------------------------------ */
-    .dragBox {
-      position:absolute; background:rgba(59,130,246,.3); pointer-events:none;
-    }
+    .dragBox{position:absolute;background:rgba(59,130,246,.3);pointer-events:none}
   </style>
 </head>
 
 <body class="bg-gray-100 pb-10">
   <div class="max-w-full mx-auto p-4 flex items-center gap-4">
     <h1 class="text-2xl font-bold">Weekly Schedule</h1>
-    <a href="/" class="text-blue-600 underline">↩︎ table</a>
+    <a href="/" class="text-blue-600 underline">table</a>
     <a href="/admin.html" class="text-blue-600 underline">admin</a>
   </div>
 
-  <!-- timeline grid -->
   <div id="grid" class="mx-auto bg-white shadow w-fit"></div>
+
+  <!-- Shift dialog -->
+  <dialog id="shiftDlg" class="max-w-sm rounded shadow">
+    <form id="shiftForm" method="dialog" class="p-6 space-y-4">
+      <input type="hidden" name="index" value="">
+      <div>
+        <label class="block text-sm font-semibold">Shift type</label>
+        <select id="roleSel" name="role" class="w-full border p-1 rounded"></select>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <label class="block text-sm">Start
+          <input id="startTime" type="time" name="start" required class="w-full border p-1 rounded">
+        </label>
+        <label class="block text-sm">End
+          <input id="endTime" type="time" name="end" required class="w-full border p-1 rounded">
+        </label>
+      </div>
+      <div>
+        <label class="block text-sm">Notes
+          <textarea id="notes" rows="2" name="notes"
+                    class="w-full border p-1 rounded"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+        <button type="button" id="deleteBtn" class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
+        <button type="button" id="cancelBtn" class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="schedule.js"></script>
 </body>
