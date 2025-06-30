@@ -1,180 +1,125 @@
-/* ------------------------------------------------------------------ */
-/* helpers                                                            */
-/* ------------------------------------------------------------------ */
-const COLORS = {                                   // ability → colour
-  Reservations : '#16a34a',
-  Dispatch     : '#b91c1c',
-  Security     : '#be185d',
-  Network      : '#475569',
-  'Journey Desk': '#65a30d',
-  Marketing    : '#7c3aed',
-  Sales        : '#d97706',
-  'Badges/Projects':'#0ea5e9'
+/* ---------- helpers & palette ------------------------------------ */
+const COLORS={
+  Reservations:'#16a34a',Dispatch:'#b91c1c',Security:'#be185d',
+  Network:'#475569','Journey Desk':'#65a30d',Marketing:'#7c3aed',
+  Sales:'#d97706','Badges/Projects':'#0ea5e9'
 };
+const hh=n=>String(n).padStart(2,'0')+':00';
+const toHM = t=>{const [h,m]=t.split(':').map(Number);return h*60+m;};
+const fmt  = m=>`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 
-const hh  = h => `${String(h).padStart(2,'0')}:00`;
-const pad = h => hh(h).slice(0,5);
-const toH = t => +t.split(':')[0];
-const safe = s => s.replace(/ /g,'\\ ');
-const sameDay = (a,b)=>a.toDateString()===b.toDateString();
-const today  = () => new Date();
+const sameDay=(a,b)=>a.toDateString()===b.toDateString();
 
-/* ------------------------------------------------------------------ */
-/* state & DOM refs                                                   */
-/* ------------------------------------------------------------------ */
+/* ---------- state ------------------------------------------------- */
 let workers=[], abilities=[], blocks=[];
-let current = location.hash ? new Date(location.hash.slice(1)) : today();
+let cur=location.hash?new Date(location.hash.slice(1)):new Date;
 
-const grid  = document.getElementById('grid');
-const wrap  = document.getElementById('wrap');
-const dateH = document.getElementById('date');
+const grid=document.getElementById('grid'),wrap=document.getElementById('wrap'),dateH=document.getElementById('date');
 
-/* ------------------------------------------------------------------ */
-/* init                                                               */
-/* ------------------------------------------------------------------ */
+/* ---------- init -------------------------------------------------- */
 (async()=>{
-  [workers,abilities] = await Promise.all([
+  [workers,abilities]=await Promise.all([
     fetch('/api/workers').then(r=>r.json()),
     fetch('/api/abilities').then(r=>r.json())
   ]);
   draw();
 })();
 
-/* ------------------------------------------------------------------ */
-/* rendering                                                          */
-/* ------------------------------------------------------------------ */
+/* ---------- render grid ------------------------------------------- */
 function draw(){
-  dateH.textContent = current.toDateString();
-  location.hash     = current.toISOString().slice(0,10);
+  dateH.textContent=cur.toDateString(); location.hash=cur.toISOString().slice(0,10);
+  grid.innerHTML=''; grid.style.gridTemplateRows=`30px repeat(${workers.length},30px)`;
 
-  grid.innerHTML = '';
-  grid.style.gridTemplateRows = `30px repeat(${workers.length},30px)`;
-  grid.style.minHeight        = `${30 + workers.length*30}px`;
+  grid.appendChild(hdr(''));                       // TL empty
+  for(let h=0;h<24;h++) grid.appendChild(hdr(hh(h),'',h+2));
 
-  // header
-  grid.appendChild(lbl(''));
-  for(let h=0;h<24;h++){
-    grid.appendChild(cell(hh(h),
-      `grid-row:1;grid-column:${h+2}`,
-      'bg-slate-800 text-white text-xs flex items-center justify-center'));
-  }
-
-  // rows
   workers.forEach((w,r)=>{
-    grid.appendChild(lbl(w.Name,'',r+2));
-    for(let h=0;h<24;h++){
-      grid.appendChild(cell('',
-        `grid-row:${r+2};grid-column:${h+2}`,
-        'cell',{row:r,hour:h}));
-    }
+    grid.appendChild(hdr(w.Name,'',r+2));
+
+    // row band for absolute shift placement
+    const band=document.createElement('div');
+    band.className='band'; band.style.gridRow=`${r+2}`; grid.appendChild(band);
   });
 
-  // blocks for the day
-  blocks.filter(b=>sameDay(b.date,current)).forEach((b,i)=>makeBlock(b,i));
+  blocks.filter(b=>sameDay(b.date,cur)).forEach((b,i)=>makeBlock(b,i));
+  wrap.scrollTop=0;
+}
+function hdr(txt,cls='',col){const d=document.createElement('div');d.textContent=txt;d.className='rowLabel '+cls;if(col)d.style.gridColumn=col;return d;}
 
-  wrap.scrollTop = 0;
-}
-
-function lbl(text,extra='',row=1){
-  return Object.assign(document.createElement('div'),{
-    className:`rowLabel ${extra}`,
-    style:`grid-row:${row}`,
-    textContent:text
-  });
-}
-function cell(text,style,extra='',ds={}){
-  const el = Object.assign(document.createElement('div'),
-    {className:extra,textContent:text,style});
-  Object.assign(el.dataset,ds); return el;
-}
+/* ---------- shift block ------------------------------------------- */
 function makeBlock(b,idx){
-  const row = workers.findIndex(w=>w.Name===b.name); if(row<0) return;
-  const span = b.end - b.start;
-  const colStart = b.start + 2;
+  const row=workers.findIndex(w=>w.Name===b.name); if(row<0)return;
+  const band=grid.querySelectorAll('.band')[row];
 
-  const el = cell(
-    `${b.role} ${hh(b.start)}-${hh(b.end)}`,
-    `grid-row:${row+2}; grid-column:${colStart} / span ${span};`
-      + `background:${COLORS[b.role]||'#2563eb'}`,
-    'block');
-  el.ondblclick = () => openDialog('edit',idx);
-  grid.appendChild(el);
+  const dur=b.end-b.start;               // minutes
+  const left= b.start/1440*100;          // %
+  const width= dur/1440*100;             // %
+
+  const el=document.createElement('div');
+  el.className='block'; el.style.cssText=
+    `left:${left}%;width:${width}%;background:${COLORS[b.role]||'#2563eb'}`;
+  el.textContent=`${b.role} ${fmt(b.start)}-${fmt(b.end)}`;
+  el.ondblclick=()=>popup('edit',idx);
+  band.appendChild(el);
 }
 
-/* ------------------------------------------------------------------ */
-/* dragging create                                                    */
-/* ------------------------------------------------------------------ */
-let drag=null;
-grid.onmousedown=e=>{
-  if(!e.target.dataset.hour) return;
-  drag = { row:+e.target.dataset.row, start:+e.target.dataset.hour,
-           box:cell('', '', 'dragBox') };
-  grid.appendChild(drag.box);
-};
-grid.onmousemove=e=>{
-  if(!drag||!e.target.dataset.hour||+e.target.dataset.row!==drag.row) return;
-  const span = Math.max(1, +e.target.dataset.hour + 1 - drag.start);
-  drag.box.style =
-    `grid-row:${drag.row+2};grid-column:${drag.start+2}/ span ${span}`;
-};
-grid.onmouseup=()=>{
-  if(!drag) return;
-  const span = parseInt(drag.box.style.gridColumn.split('span ')[1])||1;
-  openDialog('new',null,{row:drag.row,start:drag.start,end:drag.start+span});
-  drag.box.remove(); drag=null;
-};
+/* ---------- dragging create --------------------------------------- */
+let sel=null;
+grid.addEventListener('mousedown',e=>{
+  if(!e.target.classList.contains('cell'))return;
+  sel={row:[...grid.querySelectorAll('.cell')].indexOf(e.target)%24 ? +e.target.dataset.row : +e.target.parentNode.dataset.row,
+       start:+e.target.dataset.hour*60,
+       tmp:document.createElement('div')};
+  sel.tmp.className='dragBox';
+  const band=grid.querySelectorAll('.band')[sel.row]; band.appendChild(sel.tmp);
+});
+grid.addEventListener('mousemove',e=>{
+  if(!sel||!e.target.classList.contains('cell')||+e.target.dataset.row!==sel.row)return;
+  const end=(+e.target.dataset.hour+1)*60;
+  const left= sel.start/1440*100;
+  const width= Math.max(60,end-sel.start)/1440*100;
+  sel.tmp.style.cssText=`left:${left}%;width:${width}%;`;
+});
+grid.addEventListener('mouseup',()=>{
+  if(!sel)return;
+  const widthPct=parseFloat(sel.tmp.style.width);
+  const dur=Math.round(widthPct/100*1440);
+  popup('new',null,{row:sel.row,start:sel.start,end:sel.start+dur});
+  sel.tmp.remove(); sel=null;
+});
 
-/* ------------------------------------------------------------------ */
-/* dialog                                                             */
-/* ------------------------------------------------------------------ */
-const dlg   = document.getElementById('shiftDlg');
-const form  = document.getElementById('shiftForm');
-const role  = document.getElementById('roleSel');
-const start = document.getElementById('start');
-const end   = document.getElementById('end');
-const notes = document.getElementById('notes');
-const del   = document.getElementById('del');
-const cancel= document.getElementById('cancel');
+/* ---------- dialog ------------------------------------------------ */
+const dlg=document.getElementById('shiftDlg'),f=document.getElementById('shiftForm'),
+      roleSel=document.getElementById('roleSel'),startIn=document.getElementById('start'),
+      endIn=document.getElementById('end'),notes=document.getElementById('notes'),
+      del=document.getElementById('del'),cancel=document.getElementById('cancel');
 
-role.onchange = ()=>{
-  if(role.value!=='__new__') return;
-  const v=prompt('New ability:'); if(v){abilities.push(v);fillRoles(v);}else role.selectedIndex=0;
-};
-function fillRoles(sel=''){
-  role.innerHTML = abilities
-    .map(a=>`<option ${a===sel?'selected':''}>${a}</option>`).join('')
-    +'<option value="__new__">Other…</option>';
-}
-function openDialog(mode,idx,preset){
-  fillRoles();
+roleSel.onchange=()=>{if(roleSel.value!=='__new__')return;const v=prompt('New ability:');if(v){abilities.push(v);fillRoles(v);}else roleSel.selectedIndex=0;};
+function fillRoles(sel=''){roleSel.innerHTML=abilities.map(a=>`<option ${a===sel?'selected':''}>${a}</option>`).join('')+'<option value="__new__">Other…</option>';}
+
+function popup(mode,idx,p){ fillRoles();
   if(mode==='edit'){
-    const b=blocks[idx];
-    form.index.value=idx;
-    role.value=b.role; start.value=pad(b.start); end.value=pad(b.end);
-    notes.value=b.notes||''; del.classList.remove('hidden');
+    const b=blocks[idx];f.index.value=idx;roleSel.value=b.role;
+    startIn.value=fmt(b.start);endIn.value=fmt(b.end);
+    notes.value=b.notes||'';del.classList.remove('hidden');
   }else{
-    form.index.value='';
-    form.dataset.row=preset.row;
-    role.selectedIndex=0; start.value=pad(preset.start); end.value=pad(preset.end);
-    notes.value=''; del.classList.add('hidden');
+    f.index.value='';f.dataset.row=p.row;roleSel.selectedIndex=0;
+    startIn.value=fmt(p.start);endIn.value=fmt(p.end);
+    notes.value='';del.classList.add('hidden');
   }
   dlg.showModal();
 }
-form.onsubmit=e=>{
+f.onsubmit=e=>{
   e.preventDefault();
-  const data={role:role.value,start:toH(start.value),end:toH(end.value),notes:notes.value};
-  if(data.start>=data.end) return alert('End must be after start');
-  if(form.index.value===''){
-    blocks.push({...data,name:workers[+form.dataset.row].Name,date:new Date(current)});
-  }else Object.assign(blocks[+form.index.value],data);
-  dlg.close(); draw();
+  const b={role:roleSel.value,start:toHM(startIn.value),end:toHM(endIn.value),notes:notes.value};
+  if(b.start>=b.end)return alert('End after start');
+  if(f.index.value===''){blocks.push({...b,name:workers[+f.dataset.row].Name,date:new Date(cur)});}
+  else Object.assign(blocks[+f.index.value],b);
+  dlg.close();draw();
 };
-del.onclick = ()=>{blocks.splice(+form.index.value,1); dlg.close(); draw();};
-cancel.onclick = ()=>dlg.close();
+del.onclick=()=>{blocks.splice(+f.index.value,1);dlg.close();draw();};
+cancel.onclick=()=>dlg.close();
 
-/* ------------------------------------------------------------------ */
-/* date navigation                                                    */
-/* ------------------------------------------------------------------ */
-document.getElementById('prev').onclick=()=>{current=shift(current,-1);draw();};
-document.getElementById('next').onclick=()=>{current=shift(current, 1);draw();};
-const shift=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x;};
+/* ---------- prev / next day nav ---------------------------------- */
+document.getElementById('prev').onclick=()=>{cur.setDate(cur.getDate()-1);draw();};
+document.getElementById('next').onclick=()=>{cur.setDate(cur.getDate()+1);draw();};
