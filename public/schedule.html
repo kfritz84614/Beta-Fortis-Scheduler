@@ -7,25 +7,18 @@
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* hour grid ---------------------------------------------------- */
+    /* grid & block styles (unchanged) */
     #grid{display:grid;grid-template-columns:150px repeat(24,1fr)}
     #grid>.rowLabel{grid-column:1;background:#f3f4f6;border-bottom:1px solid #ddd;
                     padding:2px 4px;font-size:.75rem}
     #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
-
-    /* overlay band ------------------------------------------------- */
-    .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
-          pointer-events:none}
-
-    /* shift block -------------------------------------------------- */
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;
-           font-size:.65rem;line-height:1rem;padding-left:4px;color:#fff;
-           pointer-events:auto;cursor:pointer}
-
-    .dragBox{position:absolute;background:rgba(59,130,246,.35);pointer-events:none}
+    .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee}
+    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
+           line-height:1rem;padding-left:4px;color:#fff;cursor:pointer}
+    .dragBox{position:absolute;background:rgba(59,130,246,.35)}
     #wrap{overflow:auto;max-width:100vw;max-height:80vh}
 
-    /* dialog ------------------------------------------------------- */
+    /* dialog */
     #shiftDlg{border:none;border-radius:.5rem;background:#fff}
     #shiftDlg form{width:20rem;padding:1.5rem}
     #shiftDlg .field{margin-bottom:.75rem}
@@ -37,55 +30,56 @@
 
 <body class="bg-gray-100">
 
-  <!-- navigation --------------------------------------------------- -->
+  <!-- nav header -->
   <header class="p-4 flex items-center gap-4">
     <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
     <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
     <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
 
-    <button id="todayBtn"
-            class="px-3 py-1 bg-emerald-600 text-white rounded shadow">
+    <button id="todayBtn" class="px-3 py-1 bg-emerald-600 text-white rounded shadow">
       today
     </button>
 
-    <a href="/"            class="ml-4 text-blue-600 underline">table</a>
-    <a href="/admin.html"  class="text-blue-600 underline">admin</a>
+    <a href="/"           class="ml-4 text-blue-600 underline">table</a>
+    <a href="/admin.html" class="text-blue-600 underline">admin</a>
   </header>
 
-  <!-- schedule grid -->
   <div id="wrap" class="mx-auto bg-white shadow w-fit">
     <div id="grid"></div>
   </div>
 
-  <!-- shift dialog ------------------------------------------------- -->
+  <!-- SHIFT DIALOG -->
   <dialog id="shiftDlg">
     <form id="shiftForm" method="dialog">
       <input type="hidden" name="index"/>
+
+      <!-- NEW: employee selector -->
+      <div class="field">
+        <label>Employee</label>
+        <input id="empSel"
+               name="emp"
+               list="workerList"
+               placeholder="Start typing a name..."
+               autocomplete="off"
+               required>
+        <datalist id="workerList"></datalist>
+      </div>
 
       <div class="field">
         <label>Shift type</label>
         <select id="roleSel" name="role"></select>
       </div>
 
-      <!-- FIX: wrapper is plain grid, not .field grid -->
       <div class="grid grid-cols-2 gap-4">
         <div class="field">
           <label>Start&nbsp;(HHMM or HH:MM)</label>
-          <input id="start"
-                 name="start"
-                 type="text"
-                 placeholder="0815"
-                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
-                 required>
+          <input id="start" name="start" type="text"
+                 placeholder="0815" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
         </div>
         <div class="field">
           <label>End&nbsp;(HHMM or HH:MM)</label>
-          <input id="end"
-                 name="end"
-                 type="text"
-                 placeholder="1245"
-                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
-                 required>
+          <input id="end" name="end" type="text"
+                 placeholder="1245" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
         </div>
       </div>
 
