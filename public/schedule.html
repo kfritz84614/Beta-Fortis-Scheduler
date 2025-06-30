@@ -7,23 +7,23 @@
 <script src="https://cdn.tailwindcss.com"></script>
 
 <style>
-  /* grid ------------------------------------------------------------ */
+  /* outer hour grid ----------------------------------------------- */
   #grid{display:grid;grid-template-columns:150px repeat(24,1fr)}
-  #grid>.rowLabel{grid-column:1;background:#f3f4f6;
-                  border-bottom:1px solid #ddd;padding:2px 4px;font-size:.75rem}
+  #grid>.rowLabel{grid-column:1;background:#f3f4f6;border-bottom:1px solid #ddd;
+                  padding:2px 4px;font-size:.75rem}
   #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
 
-  /* shift block — now behaves as a grid item, not absolute ---------- */
-  .block{display:flex;align-items:center;padding-left:4px;
-         font-size:.65rem;line-height:1rem;color:#fff;border-radius:3px}
+  /* row “band” holds absolute-pos shift blocks -------------------- */
+  .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee}
 
-  /* drag helper */
-  .dragBox{background:rgba(59,130,246,.35);pointer-events:none}
+  /* shift blocks --------------------------------------------------- */
+  .block{position:absolute;top:2px;bottom:2px;border-radius:3px;
+         font-size:.65rem;line-height:1rem;padding-left:4px;color:#fff;cursor:pointer}
 
-  /* scroll wrapper */
+  .dragBox{position:absolute;background:rgba(59,130,246,.35);pointer-events:none}
   #wrap{overflow:auto;max-width:100vw;max-height:80vh}
 
-  /* dialog look ----------------------------------------------------- */
+  /* dialog look ---------------------------------------------------- */
   #shiftDlg{border:none;border-radius:.5rem;background:#fff}
   #shiftDlg form{width:20rem;padding:1.5rem}
   #shiftDlg .field{margin-bottom:.75rem}
@@ -34,50 +34,48 @@
 </head>
 
 <body class="bg-gray-100">
-  <!-- date nav -->
-  <header class="p-4 flex items-center gap-4">
-    <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
-    <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
-    <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
-    <a href="/"           class="ml-4 text-blue-600 underline">table</a>
-    <a href="/admin.html" class="text-blue-600 underline">admin</a>
-  </header>
+<header class="p-4 flex items-center gap-4">
+  <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
+  <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
+  <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
+  <a href="/"           class="ml-4 text-blue-600 underline">table</a>
+  <a href="/admin.html" class="text-blue-600 underline">admin</a>
+</header>
 
-  <!-- grid -->
-  <div id="wrap" class="mx-auto bg-white shadow w-fit">
-    <div id="grid"></div>
-  </div>
+<div id="wrap" class="mx-auto bg-white shadow w-fit">
+  <div id="grid"></div>
+</div>
 
-  <!-- shift dialog -->
-  <dialog id="shiftDlg">
-    <form id="shiftForm" method="dialog">
-      <input type="hidden" name="index"/>
+<!-- dialog -->
+<dialog id="shiftDlg">
+  <form id="shiftForm" method="dialog">
+    <input type="hidden" name="index"/>
 
-      <div class="field">
-        <label>Shift type</label>
-        <select id="roleSel" name="role"></select>
-      </div>
+    <div class="field">
+      <label>Shift type</label>
+      <select id="roleSel" name="role"></select>
+    </div>
 
-      <div class="field grid grid-cols-2 gap-4">
-        <div><label>Start</label><input id="start" name="start" type="time" required></div>
-        <div><label>End</label><input id="end"   name="end"   type="time" required></div>
-      </div>
+    <div class="field grid grid-cols-2 gap-4">
+      <div><label>Start</label><input id="start" name="start" type="time" step="900" required></div>
+      <div><label>End</label>  <input id="end"   name="end"   type="time" step="900" required></div>
+    </div>
 
-      <div class="field">
-        <label>Notes</label>
-        <textarea id="notes" name="notes" rows="2"></textarea>
-      </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="notes" name="notes" rows="2"></textarea>
+    </div>
 
-      <div class="flex justify-end gap-3 pt-1">
-        <button class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
-        <button type="button" id="del"
-                class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
-        <button type="button" id="cancel"
-                class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
-      </div>
-    </form>
-  </dialog>
+    <div class="flex justify-end gap-3 pt-1">
+      <button class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+      <button type="button" id="del"
+              class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
+      <button type="button" id="cancel"
+              class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
-  <script type="module" src="schedule.js"></script>
+<script type="module" src="schedule.js"></script>
 </body>
 </html>
