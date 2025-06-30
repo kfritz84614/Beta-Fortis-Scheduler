@@ -18,8 +18,9 @@
           pointer-events:none}
 
     /* shift block -------------------------------------------------- */
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
-           line-height:1rem;padding-left:4px;color:#fff;cursor:pointer;pointer-events:auto}
+    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;
+           font-size:.65rem;line-height:1rem;padding-left:4px;color:#fff;
+           pointer-events:auto;cursor:pointer}
 
     .dragBox{position:absolute;background:rgba(59,130,246,.35);pointer-events:none}
     #wrap{overflow:auto;max-width:100vw;max-height:80vh}
@@ -36,11 +37,11 @@
 
 <body class="bg-gray-100">
 
-  <!-- navigation -->
+  <!-- navigation --------------------------------------------------- -->
   <header class="p-4 flex items-center gap-4">
-    <button id="prev"  class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
+    <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
     <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
-    <button id="next"  class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
+    <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
 
     <button id="todayBtn"
             class="px-3 py-1 bg-emerald-600 text-white rounded shadow">
@@ -56,7 +57,7 @@
     <div id="grid"></div>
   </div>
 
-  <!-- shift dialog -->
+  <!-- shift dialog ------------------------------------------------- -->
   <dialog id="shiftDlg">
     <form id="shiftForm" method="dialog">
       <input type="hidden" name="index"/>
@@ -66,9 +67,10 @@
         <select id="roleSel" name="role"></select>
       </div>
 
-      <div class="field grid grid-cols-2 gap-4">
-        <div>
-          <label>Start&nbsp;(HHMM&nbsp;or&nbsp;HH:MM)</label>
+      <!-- FIX: wrapper is plain grid, not .field grid -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="field">
+          <label>Start&nbsp;(HHMM or HH:MM)</label>
           <input id="start"
                  name="start"
                  type="text"
@@ -76,8 +78,8 @@
                  pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
                  required>
         </div>
-        <div>
-          <label>End&nbsp;(HHMM&nbsp;or&nbsp;HH:MM)</label>
+        <div class="field">
+          <label>End&nbsp;(HHMM or HH:MM)</label>
           <input id="end"
                  name="end"
                  type="text"
