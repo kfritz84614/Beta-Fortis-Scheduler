@@ -4,44 +4,73 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Fortis • Day View</title>
+
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* grid --------------------------------------------------------- */
-    #grid{display:grid;grid-template-columns:150px repeat(24,1fr)}
-    #grid>.rowLabel{grid-column:1;background:#f3f4f6;border-bottom:1px solid #ddd;
-                    padding:2px 4px;font-size:.75rem}
-    #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
+    /* ------------ grid & cells ---------------- */
+    #grid { display:grid; grid-template-columns:150px repeat(24,1fr) }
+    #grid > .rowLabel {
+      grid-column:1;
+      background:#f3f4f6;
+      border-bottom:1px solid #ddd;
+      padding:2px 4px;
+      font-size:.75rem;
+    }
+    #grid > .cell {
+      border-bottom:1px solid #eee;
+      border-right :1px solid #eee;
+    }
 
-    /* overlay band that hosts shift blocks — NOW CLICK-THROUGH ---- */
-    .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
-          pointer-events:none}
+    /* overlay band that hosts blocks — click-through */
+    .band {
+      position:relative;
+      height:100%;
+      grid-column:2 / -1;
+      border-bottom:1px solid #eee;
+      pointer-events:none;                /* <- lets clicks reach cells */
+    }
 
-    /* shift blocks ------------------------------------------------- */
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
-           line-height:1rem;padding-left:4px;color:#fff;cursor:pointer}
+    /* shift blocks */
+    .block {
+      position:absolute;
+      top:2px; bottom:2px;
+      border-radius:3px;
+      font-size:.65rem;
+      line-height:1rem;
+      padding-left:4px;
+      color:#fff;
+      cursor:pointer;
+    }
 
     /* drag preview */
-    .dragBox{position:absolute;background:rgba(59,130,246,.35)}
+    .dragBox { position:absolute; background:rgba(59,130,246,.35) }
 
-    #wrap{overflow:auto;max-width:100vw;max-height:80vh}
+    #wrap { overflow:auto; max-width:100vw; max-height:80vh }
 
-    /* dialog ------------------------------------------------------- */
-    #shiftDlg{border:none;border-radius:.5rem;background:#fff}
-    #shiftDlg form{width:20rem;padding:1.5rem}
-    #shiftDlg .field{margin-bottom:.75rem}
-    #shiftDlg label{display:block;margin-bottom:.25rem;font-size:.875rem}
-    #shiftDlg input,#shiftDlg select,#shiftDlg textarea{
-      width:100%;padding:.5rem;font-size:.875rem;border:1px solid #d1d5db;border-radius:.25rem}
+    /* ------------ dialog ---------------------- */
+    #shiftDlg            { border:none; border-radius:.5rem; background:#fff }
+    #shiftDlg form       { width:20rem; padding:1.5rem }
+    #shiftDlg .field     { margin-bottom:.75rem }
+    #shiftDlg label      { display:block; margin-bottom:.25rem; font-size:.875rem }
+    #shiftDlg input,
+    #shiftDlg select,
+    #shiftDlg textarea   {
+      width:100%; padding:.5rem; font-size:.875rem;
+      border:1px solid #d1d5db; border-radius:.25rem;
+    }
   </style>
 </head>
 
 <body class="bg-gray-100">
 
-  <!-- navigation --------------------------------------------------- -->
+  <!-- ---------- navigation header ---------- -->
   <header class="p-4 flex items-center gap-4">
     <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
+
     <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
+
     <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
 
     <button id="todayBtn"
@@ -53,15 +82,15 @@
     <a href="/admin.html"  class="text-blue-600 underline">admin</a>
   </header>
 
-  <!-- scrollable schedule grid -->
+  <!-- ---------- scrollable grid wrapper ----- -->
   <div id="wrap" class="mx-auto bg-white shadow w-fit">
     <div id="grid"></div>
   </div>
 
-  <!-- shift dialog ------------------------------------------------- -->
+  <!-- ---------- shift dialog ---------------- -->
   <dialog id="shiftDlg">
     <form id="shiftForm" method="dialog">
-      <input type="hidden" name="index"/>
+      <input type="hidden" name="index">
 
       <!-- employee autocomplete -->
       <div class="field">
@@ -69,53 +98,56 @@
         <input id="empSel"
                name="emp"
                list="workerList"
-               placeholder="Start typing a name..."
+               placeholder="Start typing a name…"
                autocomplete="off"
                required>
         <datalist id="workerList"></datalist>
       </div>
 
+      <!-- shift type -->
       <div class="field">
         <label>Shift type</label>
         <select id="roleSel" name="role"></select>
       </div>
 
+      <!-- start / end -->
       <div class="grid grid-cols-2 gap-4">
-        <div class="field">
-          <label>Start&nbsp;(HHMM&nbsp;or&nbsp;HH:MM)</label>
-          <input id="start"
-                 name="start"
-                 type="text"
-                 placeholder="0815"
-                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
-                 required>
+        <div class="flex flex-col field">
+          <label>Start&nbsp;(24h)</label>
+          <input  id="start" name="start" type="text"
+                  placeholder="0815"
+                  pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
+                  required>
         </div>
-        <div class="field">
-          <label>End&nbsp;(HHMM&nbsp;or&nbsp;HH:MM)</label>
-          <input id="end"
-                 name="end"
-                 type="text"
-                 placeholder="1245"
-                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
-                 required>
+        <div class="flex flex-col field">
+          <label>End&nbsp;(24h)</label>
+          <input  id="end"   name="end"   type="text"
+                  placeholder="1245"
+                  pattern="^([01]?\d|2[0-3]):?[0-5]\d$"
+                  required>
         </div>
       </div>
 
+      <!-- notes -->
       <div class="field">
         <label>Notes</label>
         <textarea id="notes" name="notes" rows="2"></textarea>
       </div>
 
+      <!-- buttons -->
       <div class="flex justify-end gap-3 pt-1">
         <button class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
         <button type="button" id="del"
-                class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
+                class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete
+        </button>
         <button type="button" id="cancel"
-                class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
+                class="bg-gray-400 text-white px-3 py-1 rounded">Cancel
+        </button>
       </div>
     </form>
   </dialog>
 
+  <!-- main JS -->
   <script type="module" src="schedule.js"></script>
 </body>
 </html>
