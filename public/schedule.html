@@ -13,12 +13,13 @@
                     padding:2px 4px;font-size:.75rem}
     #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
 
-    /* band & block ------------------------------------------------- */
+    /* band hosts blocks; click-through when empty ------------------ */
     .band {position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
-           pointer-events:none}              /* clicks fall through when empty */
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;
-           font-size:.65rem;line-height:1rem;padding-left:4px;color:#fff;
-           cursor:pointer;pointer-events:auto}/* blocks keep interaction */
+           pointer-events:none}
+    /* blocks stay interactive */
+    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
+           line-height:1rem;padding-left:4px;color:#fff;cursor:pointer;
+           pointer-events:auto}
 
     .dragBox{position:absolute;background:rgba(59,130,246,.35)}
     #wrap{overflow:auto;max-width:100vw;max-height:80vh}
@@ -35,7 +36,7 @@
 
 <body class="bg-gray-100">
 
-  <!-- navigation --------------------------------------------------- -->
+  <!-- navigation -->
   <header class="p-4 flex items-center gap-4">
     <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
     <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
@@ -55,7 +56,7 @@
     <div id="grid"></div>
   </div>
 
-  <!-- shift dialog ------------------------------------------------- -->
+  <!-- shift dialog -->
   <dialog id="shiftDlg">
     <form id="shiftForm" method="dialog">
       <input type="hidden" name="index">
@@ -76,12 +77,14 @@
         <div class="flex flex-col field">
           <label>Start&nbsp;(24h)</label>
           <input id="start" name="start" type="text"
-                 placeholder="0815" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
+                 placeholder="0815"
+                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
         </div>
         <div class="flex flex-col field">
           <label>End&nbsp;(24h)</label>
           <input id="end" name="end" type="text"
-                 placeholder="1245" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
+                 placeholder="1245"
+                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
         </div>
       </div>
 
