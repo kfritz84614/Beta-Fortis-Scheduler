@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fortis — Admin</title>
+
+  <!-- quick Tailwind via CDN for nicer look -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-slate-800">
+  <div class="max-w-5xl mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-6">Admin • Manage Workers</h1>
+
+    <!-- Worker list -->
+    <table id="workers-table" class="w-full border text-sm bg-white shadow">
+      <thead class="bg-slate-800 text-white">
+        <tr>
+          <th class="p-2">Name</th>
+          <th class="p-2">Primary</th>
+          <th class="p-2">Secondary</th>
+          <th class="p-2">Tertiary</th>
+          <th class="p-2">Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- editor / create form -->
+    <div id="editor" class="mt-8 hidden">
+      <h2 class="text-xl font-semibold mb-2">Edit Worker</h2>
+      <form id="worker-form" class="grid gap-4 md:grid-cols-2 bg-white p-6 shadow rounded">
+        <input type="hidden" name="idx" />
+        <label class="block">Name
+          <input name="Name" class="w-full p-2 border rounded" required />
+        </label>
+        <label class="block">Primary
+          <input name="Primary Ability" class="w-full p-2 border rounded" required />
+        </label>
+        <label class="block">Secondary
+          <input name="Secondary Ability" class="w-full p-2 border rounded" />
+        </label>
+        <label class="block">Tertiary
+          <input name="Tertiary Ability" class="w-full p-2 border rounded" />
+        </label>
+
+        <label class="block col-span-2">Working Hours (eg 0730-1700)
+          <input name="Working Hours" class="w-full p-2 border rounded" required />
+        </label>
+
+        <label class="block">Lunch Time
+          <input name="Lunch Time" class="w-full p-2 border rounded" />
+        </label>
+        <label class="block">Target Non-Disp/Res hrs
+          <input name="Target Number of Time not on Dispatch or Reservations"
+                 type="number" class="w-full p-2 border rounded" />
+        </label>
+
+        <div class="col-span-2 flex gap-4 mt-2">
+          <button type="submit"
+                  class="bg-green-600 text-white px-4 py-2 rounded">Save</button>
+          <button type="button" id="cancel-btn"
+                  class="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="admin.js"></script>
+</body>
+</html>
