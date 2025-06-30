@@ -1,9 +1,10 @@
-// app.js — Fortis Scheduler backend (Vercel-compatible)
+// app.js — Fortis Scheduler backend (Vercel‑compatible)
 import express from 'express';
 import cors from 'cors';
 import { readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 
 // ---------------------------------------------------------------------
 // Setup helpers
@@ -11,30 +12,28 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-const DATA_FILE = path.join(__dirname, 'data', 'workers.json');
+// data files live in /data next to this file
+const WORKER_FILE = path.join(__dirname, 'data', 'workers.json');
+const SHIFT_FILE  = path.join(__dirname, 'data', 'shifts.json');
 
-function loadWorkers() {
-  try {
-    return JSON.parse(readFileSync(DATA_FILE, 'utf8'));
-  } catch (err) {
-    console.error('❌  workers.json not found or invalid:', err);
-    return [];
-  }
-}
-function saveWorkers(list) {
-  writeFileSync(DATA_FILE, JSON.stringify(list, null, 2));
-}
-let workers = loadWorkers();
+const loadJSON = file => {
+  try { return JSON.parse(readFileSync(file, 'utf8')); }
+  catch { return []; }
+};
+const saveJSON = (file, obj) => writeFileSync(file, JSON.stringify(obj, null, 2));
 
-function uniqueAbilities() {
+let workers = loadJSON(WORKER_FILE);
+let shifts  = loadJSON(SHIFT_FILE);
+
+const saveWorkers = () => saveJSON(WORKER_FILE, workers);
+const saveShifts  = () => saveJSON(SHIFT_FILE , shifts );
+
+const uniqueAbilities = () => {
   const set = new Set();
-  workers.forEach(w => {
-    ['Primary Ability', 'Secondary Ability', 'Tertiary Ability'].forEach(key => {
-      if (w[key]) set.add(w[key]);
-    });
-  });
+  workers.forEach(w=>['Primary Ability','Secondary Ability','Tertiary Ability']
+    .forEach(k=>w[k]&&set.add(w[k])));
   return Array.from(set).sort();
-}
+};
 
 // ---------------------------------------------------------------------
 // Express app (exported, no app.listen for Vercel)
@@ -44,58 +43,59 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// -------------------------------------------------- API routes
-app.get('/api/workers', (_, res) => res.json(workers));
+// -------------------------------------------------- Worker routes
+app.get('/api/workers',  (_,res)=>res.json(workers));
+app.get('/api/abilities',(_,res)=>res.json(uniqueAbilities()));
 
-app.get('/api/abilities', (_, res) => res.json(uniqueAbilities()));
+app.post('/api/workers/add', (req,res)=>{
+  const w=req.body; if(!w?.Name) return res.status(400).json({error:'Name required'});
+  if(workers.some(x=>x.Name===w.Name)) return res.status(400).json({error:'Exists'});
+  workers.push(w); saveWorkers(); res.json({success:true});
+});
+app.post('/api/workers/update',(req,res)=>{
+  const upd=req.body; const i=workers.findIndex(x=>x.Name===upd.Name);
+  if(i===-1) return res.status(404).json({error:'Not found'});
+  workers[i]={...workers[i],...upd}; saveWorkers(); res.json({success:true});
+});
+app.delete('/api/workers/:name',(req,res)=>{
+  const {name}=req.params; const len=workers.length;
+  workers=workers.filter(x=>x.Name!==name); if(workers.length===len) return res.status(404).json({error:'Not found'});
+  saveWorkers(); res.json({success:true});
+});
 
-// add new worker
-app.post('/api/workers/add', (req, res) => {
-  const newW = req.body;
-  if (!newW?.Name) return res.status(400).json({ error: 'Name required' });
-  if (workers.some(w => w.Name === newW.Name)) {
-    return res.status(400).json({ error: 'Worker already exists' });
+// PTO modify
+app.post('/api/workers/pto',(req,res)=>{
+  const {name,date,action}=req.body; const w=workers.find(x=>x.Name===name);
+  if(!w) return res.status(404).json({error:'Worker not found'});
+  w.PTO=w.PTO||[];
+  if(action==='add' && !w.PTO.includes(date)) w.PTO.push(date);
+  if(action==='remove') w.PTO=w.PTO.filter(d=>d!==date);
+  saveWorkers(); res.json({success:true,PTO:w.PTO});
+});
+
+// -------------------------------------------------- Shift routes
+app.get('/api/shifts', (_,res)=>res.json(shifts));
+
+// create or update
+app.post('/api/shifts', (req,res)=>{
+  const s=req.body; if(!s) return res.status(400).json({error:'no body'});
+  if(!s.id){ s.id=randomUUID(); shifts.push(s); }
+  else{
+    const i=shifts.findIndex(x=>x.id===s.id);
+    if(i===-1) shifts.push(s); else shifts[i]=s;
   }
-  workers.push(newW);
-  saveWorkers(workers);
-  res.json({ success: true });
+  saveShifts(); res.json({success:true,id:s.id});
 });
 
-// update existing worker
-app.post('/api/workers/update', (req, res) => {
-  const updated = req.body;
-  const idx = workers.findIndex(w => w.Name === updated.Name);
-  if (idx === -1) return res.status(404).json({ error: 'Worker not found' });
-  workers[idx] = { ...workers[idx], ...updated };
-  saveWorkers(workers);
-  res.json({ success: true });
+// delete
+app.delete('/api/shifts/:id',(req,res)=>{
+  const {id}=req.params; const len=shifts.length;
+  shifts=shifts.filter(x=>x.id!==id);
+  if(shifts.length===len) return res.status(404).json({error:'Not found'});
+  saveShifts(); res.json({success:true});
 });
 
-// delete worker
-app.delete('/api/workers/:name', (req, res) => {
-  const { name } = req.params;
-  const len = workers.length;
-  workers = workers.filter(w => w.Name !== name);
-  if (workers.length === len) return res.status(404).json({ error: 'Worker not found' });
-  saveWorkers(workers);
-  res.json({ success: true });
-});
-
-// PTO add / remove
-app.post('/api/workers/pto', (req, res) => {
-  const { name, date, action } = req.body;
-  const w = workers.find(x => x.Name === name);
-  if (!w) return res.status(404).json({ error: 'Worker not found' });
-  w.PTO = w.PTO || [];
-  if (action === 'add' && !w.PTO.includes(date)) w.PTO.push(date);
-  if (action === 'remove') w.PTO = w.PTO.filter(d => d !== date);
-  saveWorkers(workers);
-  res.json({ success: true, PTO: w.PTO });
-});
-
-// (stub) proxy chat -> OpenAI
-app.post('/api/chat', (_, res) => {
-  res.json({ reply: 'chat feature coming soon' });
-});
+// -------------------------------------------------- Chat stub
+app.post('/api/chat',(_,res)=>res.json({reply:'chat feature coming soon'}));
 
 export default app;
