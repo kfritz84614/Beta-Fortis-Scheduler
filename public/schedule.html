@@ -1,87 +1,92 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fortis • Weekly Gantt</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Fortis • Weekly Gantt</title>
+<script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Tailwind -->
-  <script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* grid ------------------------------------------------------------ */
+  #grid{display:grid;grid-template-columns:150px repeat(40,1fr)}
+  #grid>.rowLabel{grid-column:1;background:#f3f4f6;
+    border-bottom:1px solid #ddd;padding:2px 4px;font-size:.75rem}
+  #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee;position:relative}
 
-  <style>
-    /* grid ----------------------------------------------------------- */
-    #grid{display:grid;grid-template-columns:150px repeat(40,1fr)}
-    #grid>.rowLabel{grid-column:1;background:#f3f4f6;border-bottom:1px solid #ddd;
-      padding:2px 4px;font-size:.75rem}
-    #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee;position:relative}
+  /* shift blocks ---------------------------------------------------- */
+  .block{position:absolute;top:2px;bottom:2px;border-radius:3px;padding-left:4px;
+    color:#fff;font-size:.65rem;line-height:1rem;cursor:pointer}
+  .Reservations{background:#16a34a}.Dispatch{background:#b91c1c}
+  .Security{background:#be185d}.Network{background:#475569}
+  .Journey\ Desk{background:#65a30d}.Marketing{background:#7c3aed}
+  .Sales{background:#d97706}.Badges\\/Projects{background:#0ea5e9}
 
-    /* shift block ---------------------------------------------------- */
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;padding-left:4px;
-      color:#fff;font-size:.65rem;line-height:1rem;cursor:pointer}
-    .Reservations{background:#16a34a}.Dispatch{background:#b91c1c}
-    .Security{background:#be185d}.Network{background:#475569}
-    .Journey\ Desk{background:#65a30d}.Marketing{background:#7c3aed}
-    .Sales{background:#d97706}.Badges\\/Projects{background:#0ea5e9}
+  .dragBox{position:absolute;background:rgba(59,130,246,.3);pointer-events:none}
 
-    .dragBox{position:absolute;background:rgba(59,130,246,.3);pointer-events:none}
+  /* scroll wrapper -------------------------------------------------- */
+  #gridWrapper{overflow:auto;max-width:100vw;max-height:80vh}
 
-    /* wrapper scrollbars -------------------------------------------- */
-    #gridWrapper{overflow:auto;max-width:100vw;max-height:80vh}
-  </style>
+  /* dialog ---------------------------------------------------------- */
+  #shiftDlg{border:none;border-radius:.5rem;padding:0;background:#fff}
+  #shiftDlg form{width:20rem;display:block;padding:1.5rem}
+  #shiftDlg .field{display:block;margin-bottom:.75rem}
+  #shiftDlg label{display:block;font-size:.875rem;margin-bottom:.25rem}
+  #shiftDlg input,#shiftDlg select,#shiftDlg textarea{
+      width:100%;font-size:.875rem;padding:.5rem;border:1px solid #d1d5db;
+      border-radius:.25rem}
+</style>
 </head>
 
 <body class="bg-gray-100 pb-10">
-  <div class="max-w-full mx-auto p-4 flex items-center gap-4">
-    <h1 class="text-2xl font-bold">Weekly Schedule</h1>
-    <a href="/"          class="text-blue-600 underline">table</a>
-    <a href="/admin.html" class="text-blue-600 underline">admin</a>
-  </div>
+<div class="max-w-full mx-auto p-4 flex items-center gap-4">
+  <h1 class="text-2xl font-bold">Weekly Schedule</h1>
+  <a href="/"           class="text-blue-600 underline">table</a>
+  <a href="/admin.html" class="text-blue-600 underline">admin</a>
+</div>
 
-  <!-- scrollable timeline -->
-  <div id="gridWrapper" class="mx-auto bg-white shadow w-fit">
-    <div id="grid"></div>
-  </div>
+<div id="gridWrapper" class="mx-auto bg-white shadow w-fit">
+  <div id="grid"></div>
+</div>
 
-  <!-- Shift dialog --------------------------------------------------- -->
-  <dialog id="shiftDlg" class="rounded shadow border bg-white p-0">
-    <form id="shiftForm" method="dialog" class="space-y-3 p-6 w-80">
-      <input type="hidden" name="index">
+<!-- dialog -->
+<dialog id="shiftDlg">
+  <form id="shiftForm" method="dialog">
+    <input type="hidden" name="index"/>
 
-      <div>
-        <label class="block text-sm font-semibold mb-1">Shift type</label>
-        <select id="roleSel" name="role"
-                class="w-full border p-2 rounded text-sm"></select>
-      </div>
+    <div class="field">
+      <label>Shift type</label>
+      <select id="roleSel" name="role"></select>
+    </div>
 
+    <div class="field">
       <div class="grid grid-cols-2 gap-4">
-        <label class="block text-sm">Start
-          <input id="startTime" name="start" type="time" required
-                 class="w-full border p-2 rounded text-sm">
-        </label>
-        <label class="block text-sm">End
-          <input id="endTime" name="end" type="time" required
-                 class="w-full border p-2 rounded text-sm">
-        </label>
+        <div>
+          <label>Start</label>
+          <input id="startTime" name="start" type="time" required/>
+        </div>
+        <div>
+          <label>End</label>
+          <input id="endTime" name="end" type="time" required/>
+        </div>
       </div>
+    </div>
 
-      <div>
-        <label class="block text-sm">Notes
-          <textarea id="notes" name="notes" rows="2"
-                    class="w-full border p-2 rounded text-sm"></textarea>
-        </label>
-      </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="notes" name="notes" rows="2"></textarea>
+    </div>
 
-      <div class="flex justify-end gap-3 pt-2">
-        <button type="submit"
-                class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
-        <button type="button" id="deleteBtn"
-                class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
-        <button type="button" id="cancelBtn"
-                class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
-      </div>
-    </form>
-  </dialog>
+    <div class="flex justify-end gap-3 pt-1">
+      <button type="submit"
+              class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+      <button type="button" id="deleteBtn"
+              class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
+      <button type="button" id="cancelBtn"
+              class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
-  <script type="module" src="schedule.js"></script>
+<script type="module" src="schedule.js"></script>
 </body>
 </html>
