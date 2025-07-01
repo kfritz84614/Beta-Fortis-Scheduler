@@ -44,17 +44,17 @@
 
       <span class="ml-auto flex gap-2 items-center">
         <button id="prev"   class="px-2 py-0.5 rounded bg-gray-200">&larr;</button>
+        <!-- date injected by schedule.js -->
+        <span id="date" class="min-w-[9rem] text-center font-semibold"></span>
+        <button id="next"   class="px-2 py-0.5 rounded bg-gray-200">&rarr;</button>
         <button id="todayBtn"
                 class="px-3 py-0.5 rounded bg-green-600 text-white">today</button>
-        <button id="next"   class="px-2 py-0.5 rounded bg-gray-200">&rarr;</button>
       </span>
     </div>
   </header>
 
-  <!-- ───────── date heading & grid ───────── -->
-  <main class="max-w-6xl mx-auto px-4 py-4 space-y-4">
-    <h2 id="date" class="text-lg font-semibold text-center"></h2>
-
+  <!-- ───────── grid ───────── -->
+  <main class="max-w-6xl mx-auto px-4 py-4">
     <div id="wrap" class="overflow-x-auto bg-white shadow w-fit mx-auto">
       <div id="grid"></div>
     </div>
