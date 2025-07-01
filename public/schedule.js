@@ -312,7 +312,7 @@ async function sendChat(){
   addChatBubble('user',txt); chatIn.value='';
   msgs.push({role:'user',content:txt});
 
-  const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs})});
+  const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:input.value.trim()})});
   const reply=await res.json(); msgs.push(reply);
   await handleAssistant(reply);
 }
