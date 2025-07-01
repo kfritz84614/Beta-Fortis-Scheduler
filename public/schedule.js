@@ -1,93 +1,82 @@
-// ──────────────────────────────────────────────────────────
-//  Fortis Scheduler – day view  (draw, dialog, drag, resize)
-// ──────────────────────────────────────────────────────────
+//  public/schedule.js  –  full file
+//  (draw grid, PTO overlay, dialog, drag-resize-move, chatbot)
 
-// ---------- helpers & palette ----------------------------
+/* ───────────────── helpers ─────────────────────────────── */
 const COLORS = {
-  Reservations     : '#16a34a',
-  Dispatch         : '#b91c1c',
-  Security         : '#be185d',
-  Network          : '#475569',
-  'Journey Desk'   : '#65a30d',
-  Marketing        : '#7c3aed',
-  Sales            : '#d97706',
-  'Badges/Projects': '#0ea5e9',
-  Lunch            : '#8b5a2b'                      // PTO & Lunch colours
+  Reservations      : '#16a34a',
+  Dispatch          : '#b91c1c',
+  Security          : '#be185d',
+  Network           : '#475569',
+  'Journey Desk'    : '#65a30d',
+  Marketing         : '#7c3aed',
+  Sales             : '#d97706',
+  'Badges/Projects' : '#0ea5e9',
+  Lunch             : '#8b5a2b',          //  new
+  PTO               : '#94a3b8'           //  PTO overlay
 };
 
-const STEP = 15;                                    // minute snap
+const STEP = 15;                                        // snap (min)
 const hh   = h => `${String(h).padStart(2,'0')}:00`;
 const fmt  = m => `${String(m/60|0).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-const toMin = t => {                                // accepts 0815 | 08:15
+const toMin = t => {                                    // 0815 ▸ 495
   if (!t.includes(':') && t.length === 4) t = t.slice(0,2)+':'+t.slice(2);
   const [h,m] = t.split(':').map(Number);
   return h*60 + m;
 };
 const iso = d => d.toISOString().slice(0,10);
 
-// ---------- state ----------------------------------------
-let workers = [], abilities = [], shifts = [];
+/* ───────────────── state ───────────────────────────────── */
+let workers=[], abilities=[], shifts=[];
 let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
 
-// ---------- DOM refs -------------------------------------
-const grid  = document.getElementById('grid');
-const wrap  = document.getElementById('wrap');
-const dateH = document.getElementById('date');
+/* ───────────────── DOM refs ────────────────────────────── */
+const grid      = document.getElementById('grid');
+const wrap      = document.getElementById('wrap');
+const dateH     = document.getElementById('date');
+const empIn     = document.getElementById('empSel');
+const empDl     = document.getElementById('workerList');
+/* chat ui */
+const chatLog   = document.getElementById('chatLog');
+const chatForm  = document.getElementById('chatForm');
+const input     = document.getElementById('chatInput');
 
-const empIn = document.getElementById('empSel');
-const empDl = document.getElementById('workerList');
-
-// chat widget refs
-const chatInput = document.getElementById('chatInput');
-const chatSend  = document.getElementById('chatSend');
-const chatBox   = document.getElementById('chatBox');
-
-// ---------- load data ------------------------------------
-(async () => {
-  [workers, abilities, shifts] = await Promise.all([
-    fetch('/api/workers').then(r => r.json()),
-    fetch('/api/abilities').then(r => r.json()),
-    fetch('/api/shifts').then(r => r.json())
+/* ───────────────── load data ───────────────────────────── */
+(async()=>{
+  [workers,abilities,shifts] = await Promise.all([
+    fetch('/api/workers').then(r=>r.json()),
+    fetch('/api/abilities').then(r=>r.json()),
+    fetch('/api/shifts').then(r=>r.json())
   ]);
   if (!abilities.includes('Lunch')) abilities.push('Lunch');
-  empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join('');
+  empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join('');
   draw();
 })();
 
-// ---------- persistence helpers ---------------------------
-const saveShift   = async s => {
-  const { id } = await fetch('/api/shifts',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(s)
-  }).then(r=>r.json());
-  if (!s.id) s.id = id;
+/* ───────────────── persistence ─────────────────────────── */
+const saveShift   = async s =>{
+  const {id}=await fetch('/api/shifts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)}).then(r=>r.json());
+  if(!s.id) s.id=id;
 };
 const deleteShift = id => fetch(`/api/shifts/${id}`,{method:'DELETE'});
 
-// ---------- utilities -------------------------------------
-const firstStart = name => {
-  const s = shifts.filter(x=>x.name===name && x.date===iso(day))
-                  .sort((a,b)=>a.start-b.start)[0];
-  return s ? s.start : 1441;
+/* ───────────────── utilities ───────────────────────────── */
+const firstStart = name=>{
+  const rec = shifts.filter(x=>x.name===name && x.date===iso(day))
+                    .sort((a,b)=>a.start-b.start)[0];
+  return rec ? rec.start : 1441;
 };
-const label = (txt,r=1,c=1) =>{
-  const d=document.createElement('div');
-  d.className='rowLabel'; d.textContent=txt;
-  d.style=`grid-row:${r};grid-column:${c}`; return d;
-};
-const cell = (r,c,ds={}) =>{
-  const d=document.createElement('div');
-  d.className='cell'; d.style=`grid-row:${r};grid-column:${c}`;
-  Object.assign(d.dataset,ds); return d;
-};
+const label = (t,r=1,c=1)=>Object.assign(document.createElement('div'),{
+  className:'rowLabel',textContent:t,style:`grid-row:${r};grid-column:${c}`
+});
+const cell  = (r,c,ds={})=>Object.assign(document.createElement('div'),{
+  className:'cell',style:`grid-row:${r};grid-column:${c}`,dataset:ds
+});
 
-// ---------- render ----------------------------------------
+/* ───────────────── draw grid & blocks ──────────────────── */
 function draw(){
-  // sort workers
   const sorted=[...workers].sort((a,b)=>{
     const sa=firstStart(a.Name), sb=firstStart(b.Name);
-    return sa!==sb?sa-sb:a.Name.localeCompare(b.Name);
+    return sa!==sb ? sa-sb : a.Name.localeCompare(b.Name);
   });
   const rowOf=Object.fromEntries(sorted.map((w,i)=>[w.Name,i]));
 
@@ -100,20 +89,22 @@ function draw(){
     grid.appendChild(label(w.Name,r+2,1));
     for(let h=0;h<24;h++) grid.appendChild(cell(r+2,h+2,{row:r,hour:h}));
     const band=document.createElement('div');
-    band.className='band'; band.style.gridRow=r+2; grid.appendChild(band);
+    band.className='band'; band.style.gridRow=r+2;
+    grid.appendChild(band);
   });
 
-  // PTO overlay (grey band spanning 24 h)
-  workers.forEach((w,r)=>{
-    if((w.PTO||[]).includes(iso(day))){
-      const p=document.createElement('div');
-      p.className='block'; p.textContent='PTO';
-      p.style.cssText=`left:0;width:100%;background:#9ca3af;opacity:.35`;
-      grid.querySelectorAll('.band')[r].appendChild(p);
+  /* PTO overlay */
+  sorted.forEach((w,r)=>{
+    if ((w.PTO||[]).includes(iso(day))){
+      const pto=document.createElement('div');
+      pto.className='block';
+      pto.style.cssText=`grid-row:${r+2};grid-column:2/-1;
+                         background:${COLORS.PTO};opacity:.45;pointer-events:none`;
+      pto.textContent='PTO';
+      grid.appendChild(pto);
     }
   });
 
-  // normal shifts
   shifts.filter(s=>s.date===iso(day))
         .forEach((s,i)=>placeBlock(s,i,rowOf[s.name]));
 
@@ -121,31 +112,26 @@ function draw(){
   location.hash     = iso(day);
 }
 
-// ---------- place block -----------------------------------
+/* ───────────────── place shift block ───────────────────── */
 function placeBlock(s,idx,row){
   const band=grid.querySelectorAll('.band')[row]; if(!band) return;
-  const el  =document.createElement('div');
+  const el=document.createElement('div');
   el.className='block';
-  el.style.cssText=`left:${s.start/1440*100}%;width:${(s.end-s.start)/1440*100}%;background:${COLORS[s.role]||'#2563eb'}`;
+  el.style.cssText=`left:${s.start/1440*100}%;width:${(s.end-s.start)/1440*100}%;
+                    background:${COLORS[s.role]||'#2563eb'}`;
   el.textContent=`${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
   el.ondblclick=()=>openDlg('edit',idx);
-
   ['l','r'].forEach(side=>{
     const h=document.createElement('span');
     h.style=`position:absolute;${side==='l'?'left':'right'}:0;top:0;bottom:0;width:6px;cursor:ew-resize`;
     h.onmousedown=e=>startResize(e,idx,side);
     el.appendChild(h);
   });
-
-  el.onmousedown=e=>{
-    if(e.target.tagName==='SPAN') return;
-    startMove(e,idx,row,el);
-  };
-
+  el.onmousedown=e=>{if(e.target.tagName==='SPAN')return;startMove(e,idx,row,el);};
   band.appendChild(el);
 }
 
-// ---------- resize ----------------------------------------
+/* ─────────── resize ────────── */
 let rs={};
 function startResize(e,idx,side){
   e.stopPropagation();
@@ -154,7 +140,7 @@ function startResize(e,idx,side){
   document.onmouseup=endResize;
 }
 function doResize(e){
-  if(rs.idx==null) return;
+  if(rs.idx==null)return;
   const px=grid.querySelector('.band').getBoundingClientRect().width/1440;
   const diff=Math.round((e.clientX-rs.startX)/px/STEP)*STEP;
   const s=shifts[rs.idx];
@@ -167,7 +153,7 @@ function endResize(){
   rs={}; document.onmousemove=document.onmouseup=null;
 }
 
-// ---------- drag-move -------------------------------------
+/* ─────────── move ─────────── */
 let mv=null;
 function startMove(e,idx,row,orig){
   e.preventDefault();
@@ -178,7 +164,7 @@ function startMove(e,idx,row,orig){
 function doMove(e){
   if(!mv) return;
   if(!mv.moved){
-    if(Math.abs(e.clientX-mv.startX)<4 && Math.abs(e.clientY-mv.startY)<4) return;
+    if(Math.abs(e.clientX-mv.startX)<4&&Math.abs(e.clientY-mv.startY)<4) return;
     mv.moved=true;
     mv.preview=mv.orig.cloneNode(true);
     mv.preview.style.opacity=.5; mv.preview.style.pointerEvents='none';
@@ -188,9 +174,9 @@ function doMove(e){
   const diff=Math.round((e.clientX-mv.startX)/px/STEP)*STEP;
   const s=shifts[mv.idx];
   let st=Math.max(0,Math.min(1440-STEP,s.start+diff));
-  let en=s.end+diff; if(en>1440){st-=en-1440; en=1440;}
-  mv.preview.style.left = st/1440*100+'%';
-  mv.preview.style.width= (en-st)/1440*100+'%';
+  let en=s.end+diff; if(en>1440){st-=en-1440;en=1440;}
+  mv.preview.style.left=st/1440*100+'%';
+  mv.preview.style.width=(en-st)/1440*100+'%';
   const diffRow=Math.round((e.clientY-mv.startY)/30);
   const newRow=Math.min(Math.max(0,mv.row+diffRow),workers.length-1);
   mv.preview.style.gridRow=newRow+2;
@@ -198,20 +184,19 @@ function doMove(e){
 async function endMove(){
   document.onmousemove=document.onmouseup=null;
   if(!mv) return;
-  if(!mv.moved){ openDlg('edit',mv.idx); mv=null; return; }
+  if(!mv.moved){openDlg('edit',mv.idx); mv=null; return;}
   const px=grid.querySelector('.band').getBoundingClientRect().width/1440;
   const diff=Math.round((event.clientX-mv.startX)/px/STEP)*STEP;
   const s=shifts[mv.idx];
   s.start=Math.max(0,Math.min(1440-STEP,s.start+diff));
   s.end  =Math.min(1440,Math.max(s.start+STEP,s.end+diff));
   const diffRow=Math.round((event.clientY-mv.startY)/30);
-  const newRow=Math.min(Math.max(0,mv.row+diffRow),workers.length-1);
-  s.name=workers[newRow].Name;
+  s.name = workers[Math.min(Math.max(0,mv.row+diffRow),workers.length-1)].Name;
   mv.preview.remove(); mv=null;
   await saveShift(s); draw();
 }
 
-// ---------- drag-create blank box --------------------------
+/* ────────── drag-create box ───────── */
 let dc=null;
 grid.onmousedown=e=>{
   if(!e.target.dataset.hour) return;
@@ -222,8 +207,8 @@ grid.onmousedown=e=>{
 grid.onmousemove=e=>{
   if(!dc||+e.target.dataset.row!==dc.row||!e.target.dataset.hour) return;
   const end=(+e.target.dataset.hour+1)*60;
-  dc.box.style.left  = dc.start/1440*100+'%';
-  dc.box.style.width = Math.max(STEP,end-dc.start)/1440*100+'%';
+  dc.box.style.left = dc.start/1440*100+'%';
+  dc.box.style.width= Math.max(STEP,end-dc.start)/1440*100+'%';
 };
 grid.onmouseup=()=>{
   if(!dc) return;
@@ -232,100 +217,87 @@ grid.onmouseup=()=>{
   dc.box.remove(); dc=null;
 };
 
-// ---------- dialog ----------------------------------------
-const dlg=document.getElementById('shiftDlg');
-const f  =document.getElementById('shiftForm');
-const roleSel=document.getElementById('roleSel');
-const startI =document.getElementById('start');
-const endI   =document.getElementById('end');
-const notesI =document.getElementById('notes');
-const delBtn =document.getElementById('del');
+/* ────────── dialog ───────── */
+const dlg=document.getElementById('shiftDlg'),
+      f=document.getElementById('shiftForm'),
+      roleSel=document.getElementById('roleSel'),
+      startI=document.getElementById('start'),
+      endI=document.getElementById('end'),
+      notesI=document.getElementById('notes'),
+      delBtn=document.getElementById('del');
 
 function fillRoles(sel=''){
-  roleSel.innerHTML=abilities.map(a=>`<option ${a===sel?'selected':''}>${a}</option>`).join('')
-                   +'<option value="__new__">Other…</option>';
+  roleSel.innerHTML = abilities.map(a=>`<option ${a===sel?'selected':''}>${a}</option>`).join('')
+                    + '<option value="__new__">Other…</option>';
 }
 roleSel.onchange=()=>{
   if(roleSel.value!=='__new__') return;
-  const v=prompt('New ability name'); if(v){abilities.push(v);fillRoles(v);}else roleSel.selectedIndex=0;
+  const v=prompt('New ability'); if(v){abilities.push(v);fillRoles(v);}else roleSel.selectedIndex=0;
 };
-
 function openDlg(mode,idx,seed){
   fillRoles();
   if(mode==='edit'){
     const s=shifts[idx];
     f.index.value=idx;
-    empIn.value  =s.name;
-    roleSel.value=s.role;
-    startI.value =fmt(s.start);
-    endI.value   =fmt(s.end);
-    notesI.value =s.notes||'';
-    delBtn.classList.remove('hidden');
+    empIn.value=s.name; roleSel.value=s.role;
+    startI.value=fmt(s.start); endI.value=fmt(s.end);
+    notesI.value=s.notes||''; delBtn.classList.remove('hidden');
   }else{
-    f.index.value='';
-    empIn.value  =workers[seed.row].Name;
+    f.index.value=''; empIn.value=workers[seed.row].Name;
     roleSel.selectedIndex=0;
-    startI.value =fmt(seed.start);
-    endI.value   =fmt(seed.end);
-    notesI.value ='';
-    delBtn.classList.add('hidden');
+    startI.value=fmt(seed.start); endI.value=fmt(seed.end);
+    notesI.value=''; delBtn.classList.add('hidden');
   }
   dlg.showModal();
 }
-
 f.onsubmit=async e=>{
   e.preventDefault();
   const name=empIn.value.trim();
-  if(!workers.some(w=>w.Name===name)) return alert('unknown employee');
+  if(!workers.some(w=>w.Name===name)) return alert('Unknown employee');
   const s={name,role:roleSel.value,start:toMin(startI.value),end:toMin(endI.value),
            notes:notesI.value.trim(),date:iso(day)};
-  if(s.start>=s.end) return alert('end must be after start');
-  if(f.index.value==='') shifts.push(s); else{s.id=shifts[f.index.value].id; shifts[f.index.value]=s;}
+  if(s.start>=s.end) return alert('End after start!');
+  if(f.index.value==='') shifts.push(s);
+  else{ s.id=shifts[+f.index.value].id; shifts[+f.index.value]=s; }
   await saveShift(s); dlg.close(); draw();
 };
-delBtn.onclick = async()=>{
-  const idx=+f.index.value;
-  await deleteShift(shifts[idx].id);
-  shifts.splice(idx,1);
-  dlg.close(); draw();
+delBtn.onclick=async()=>{
+  await deleteShift(shifts[+f.index.value].id);
+  shifts.splice(+f.index.value,1); dlg.close(); draw();
 };
 document.getElementById('cancel').onclick=()=>dlg.close();
 
-// ---------- nav buttons -----------------------------------
-document.getElementById('prev').onclick   =()=>{day.setDate(day.getDate()-1);draw();};
-document.getElementById('next').onclick   =()=>{day.setDate(day.getDate()+1);draw();};
-document.getElementById('todayBtn').onclick=()=>{day=new Date();draw();};
+/* ────────── navigation ───────── */
+prev.onclick = ()=>{day.setDate(day.getDate()-1);draw();};
+next.onclick = ()=>{day.setDate(day.getDate()+1);draw();};
+todayBtn.onclick = ()=>{day=new Date();draw();};
 
-// ───────────── chat widget – GPT-4o assistant ──────────────
-async function sendChat(){
-  const text = chatInput.value.trim();
-  if(!text) return;
-  chatBox.appendChild(bubble(text,'user'));
-  chatInput.value='';
+/* ────────────────────────  CHATBOT  ───────────────────────── */
+function addBubble(side,txt){
+  const div=document.createElement('div');
+  div.className= side==='user'?'self-end bg-blue-100 p-2 rounded mb-1 max-w-[14rem]'
+                              :'self-start bg-gray-100 p-2 rounded mb-1 max-w-[14rem]';
+  div.textContent=txt; chatLog.appendChild(div); chatLog.scrollTop=chatLog.scrollHeight;
+}
 
-  try{
-    const r=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text,date:iso(day)})
-    });
-    if(!r.ok) throw new Error(await r.text());
-    const {reply}=await r.json();
-    chatBox.appendChild(bubble(reply,'bot'));
-    // reload data if the bot said “OK”
-    if(reply==='OK'){
-      shifts=await fetch('/api/shifts').then(r=>r.json());
-      draw();
-    }
-  }catch(err){
-    console.error('/api/chat',err);
-    chatBox.appendChild(bubble('⚠ '+err.message,'bot'));
+async function sendChat(msg){
+  addBubble('user',msg);
+
+  const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+               body:JSON.stringify({message:msg})});
+  const {reply}=await res.json();
+  addBubble('bot',reply);
+
+  /* ❶ if bot succeeded → refresh shifts & redraw */
+  if(reply.trim()==='OK'){
+    shifts = await fetch('/api/shifts').then(r=>r.json());
+    draw();
   }
-  chatBox.scrollTop=chatBox.scrollHeight;
 }
-function bubble(txt,who){
-  const d=document.createElement('div');
-  d.className='bubble '+who; d.textContent=txt; return d;
-}
-chatSend.onclick          = sendChat;
-chatInput.onkeydown = e => { if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendChat(); } };
+
+chatForm.onsubmit=e=>{
+  e.preventDefault();
+  const msg=input.value.trim();
+  if(msg) sendChat(msg);
+  input.value='';
+};
