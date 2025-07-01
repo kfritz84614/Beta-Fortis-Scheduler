@@ -254,10 +254,11 @@ roleSel.onchange = () => {
   if (v) { abilities.push(v); fillRoles(v); }
   else roleSel.selectedIndex = 0;
 };
-
-function openDlg(mode, idx, seed) {
+ffunction openDlg(mode, idx, seed) {
   fillRoles();
+
   if (mode === 'edit') {
+    // existing shift
     const s = shifts[idx];
     f.index.value = idx;
     empIn.value   = s.name;
@@ -267,10 +268,18 @@ function openDlg(mode, idx, seed) {
     notesI.value  = s.notes || '';
     delBtn.classList.remove('hidden');
   } else {
+    // brand-new shift seed (drag-create)
     f.index.value = '';
     empIn.value   = workers[seed.row].Name;
     roleSel.selectedIndex = 0;
-    startI.value
+    startI.value  = fmt(seed.start);
+    endI.value    = fmt(seed.end);
+    notesI.value  = '';
+    delBtn.classList.add('hidden');
+  }
+
+  dlg.showModal();             // <- this line (and the closing brace) were missing
+}
 //--------------------------------------------------------------
 //  Navigation buttons
 //--------------------------------------------------------------
