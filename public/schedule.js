@@ -1,6 +1,6 @@
 // public/schedule.js — COMPLETE (draw, dialog, drag, resize, save)
 /* ---------- helpers & palette -------------------------------- */
-const COLORS={Reservations:'#16a34a',Dispatch:'#b91c1c',Security:'#be185d',Network:'#475569','Journey Desk':'#65a30d',Marketing:'#7c3aed',Sales:'#d97706','Badges/Projects':'#0ea5e9'};
+const COLORS={Reservations:'#16a34a',Dispatch:'#b91c1c',Security:'#be185d',Network:'#475569','Journey Desk':'#65a30d',Marketing:'#7c3aed',Sales:'#d97706','Badges/Projects':'#0ea5e9',Lunch:'#8b5a2b'};
 const STEP=15;
 const hh=h=>`${String(h).padStart(2,'0')}:00`;
 const fmt=m=>`${String(m/60|0).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
@@ -26,6 +26,8 @@ const empDl=document.getElementById('workerList');
     fetch('/api/shifts').then(r=>r.json())
   ]);
   empDl.innerHTML=workers.map(w=>`<option value="${w.Name}">`).join('');
+  // ensure "Lunch" is always available as a shift type
+  if(!abilities.includes('Lunch')) abilities.push('Lunch');
   draw();
 })();
 
