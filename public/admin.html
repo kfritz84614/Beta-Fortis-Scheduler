@@ -5,25 +5,28 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Fortis • Admin</title>
 
-  <!-- Tailwind -->
+  <!-- Tailwind Play CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Flatpickr (CSS + JS) — must load before your module -->
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <!-- Flatpickr (CSS + JS) → used in PTO dialog -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 </head>
 
 <body class="bg-gray-100 text-slate-800">
-  <div class="max-w-6xl mx-auto p-6 space-y-6">
+  <!-- ───────── shared navigation bar ───────── -->
+  <header class="bg-white shadow">
+    <div class="max-w-6xl mx-auto h-12 flex items-center gap-6 px-4">
+      <a href="/schedule.html" class="text-blue-600 hover:underline">Schedule</a>
+      <a href="/"              class="text-blue-600 hover:underline">Workers</a>
+      <a href="/admin.html"    class="font-semibold">Admin</a>
+    </div>
+  </header>
 
-    <header class="flex items-center justify-between">
-      <h1 class="text-3xl font-bold">Admin • Workers</h1>
-      <a href="/" class="text-blue-600 underline">↩︎ back to schedule</a>
-    </header>
+  <main class="max-w-6xl mx-auto p-6 space-y-6">
+    <h1 class="text-3xl font-bold">Admin • Workers</h1>
 
-    <button id="new-btn"
-            class="bg-green-600 text-white px-4 py-1 rounded shadow">
+    <button id="new-btn" class="bg-green-600 text-white px-4 py-1 rounded shadow">
       + New Worker
     </button>
 
@@ -58,9 +61,7 @@
             <input name="Lunch Time" class="w-full p-2 border rounded" placeholder="1230-1400">
           </label>
           <label class="block">Non-Disp/Res hrs
-            <input name="Target Number of Time not on Dispatch or Reservations"
-                   type="number" min="0"
-                   class="w-full p-2 border rounded">
+            <input name="Target Number of Time not on Dispatch or Reservations" type="number" min="0" class="w-full p-2 border rounded">
           </label>
         </div>
 
@@ -77,8 +78,8 @@
         </div>
 
         <div class="flex justify-end gap-3 pt-2">
-          <button id="save-btn"   class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
-          <button id="close-btn"  class="bg-gray-400 text-white px-4 py-1 rounded">Cancel</button>
+          <button id="save-btn"  class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+          <button id="close-btn" class="bg-gray-400 text-white px-4 py-1 rounded">Cancel</button>
         </div>
       </form>
     </dialog>
@@ -86,27 +87,15 @@
     <!-- PTO calendar dialog -->
     <dialog id="ptoDlg" class="max-w-md rounded shadow">
       <div class="p-6 space-y-4">
-        <h2 class="text-xl font-bold">
-          PTO • <span id="ptoName"></span>
-        </h2>
-
+        <h2 class="text-xl font-bold">PTO • <span id="ptoName"></span></h2>
         <div id="ptoCalendar"></div>
-
-        <p class="text-sm">
-          <span class="inline-block w-3 h-3 bg-amber-400 mr-1 rounded-sm"></span>
-          date has PTO — click to add/remove
-        </p>
-
-        <button id="ptoClose"
-                class="mt-2 bg-gray-400 text-white px-4 py-1 rounded">
-          Close
-        </button>
+        <p class="text-sm"><span class="inline-block w-3 h-3 bg-amber-400 mr-1 rounded-sm"></span> date has PTO — click to add/remove</p>
+        <button id="ptoClose" class="mt-2 bg-gray-400 text-white px-4 py-1 rounded">Close</button>
       </div>
     </dialog>
+  </main>
 
-  </div>
-
-  <!-- Your admin logic (runs after Flatpickr is defined) -->
+  <!-- Admin logic -->
   <script type="module" src="admin.js"></script>
 </body>
 </html>
