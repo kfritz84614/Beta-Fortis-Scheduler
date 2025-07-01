@@ -138,126 +138,39 @@ app.delete("/api/shifts/:id", (req, res) => {
 });
 
 /* -------------------------------------------------- OpenAI chat route */
-let _openai;                    // singleton
-function client() {
-  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
-}
-
-const SYS_PROMPT = `You are Fortis SchedulerBot.\n• Map natural‑language requests to scheduling actions (add_shift, add_pto, move_shift).\n• Follow business rules and reply \"OK\" after a successful function_call.`;
-
-const FUNCTIONS = [
-  {
-    name: "add_shift",
-    description: "Add a work shift for an employee on a given date",
-    parameters: {
-      type: "object",
-      properties: {
-        name : { type: "string" },
-        role : { type: "string" },
-        date : { type: "string", description: "YYYY-MM-DD" },
-        start: { type: "string" },
-        end  : { type: "string" },
-        notes: { type: "string", nullable: true }
-      },
-      required: ["name", "role", "date", "start", "end"]
-    }
-  },
-  {
-    name: "add_pto",
-    description: "Add a PTO day for an employee",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        date: { type: "string" }
-      },
-      required: ["name", "date"]
-    }
-  },
-  {
-    name: "move_shift",
-    description: "Move an existing shift to a new time window (same day)",
-    parameters: {
-      type: "object",
-      properties: {
-        id   : { type: "string" },
-        start: { type: "string" },
-        end  : { type: "string" }
-      },
-      required: ["id", "start", "end"]
-    }
-  }
+let _openai; const ai=()=>_openai||(_openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY}));
+const SYS_PROMPT=`You are Fortis SchedulerBot.\nMap natural language to functions add_shift, add_pto, move_shift and reply \"OK\" afterwards.`;
+const FUNCTIONS=[
+  {name:"add_shift",description:"Add shift",parameters:{type:"object",properties:{name:{type:"string"},role:{type:"string"},date:{type:"string"},start:{type:"string"},end:{type:"string"},notes:{type:"string",nullable:true}},required:["name","role","date","start","end"]}},
+  {name:"add_pto",description:"Add PTO",parameters:{type:"object",properties:{name:{type:"string"},date:{type:"string"}},required:["name","date"]}},
+  {name:"move_shift",description:"Move shift",parameters:{type:"object",properties:{id:{type:"string"},start:{type:"string"},end:{type:"string"}},required:["id","start","end"]}}
 ];
+const toMin=s=>{const d=s.replace(/[^0-9]/g,"").padStart(4,"0");return +d.slice(0,2)*60+ +d.slice(2)};
 
-const toMinutes = str => {
-  const d = str.replace(/[^0-9]/g, "").padStart(4, "0");
-  return parseInt(d.slice(0,2),10) * 60 + parseInt(d.slice(2),10);
-};
-
-app.post("/api/chat", async (req, res) => {
-  const userMsg = req.body.message?.trim();
-  if (!userMsg) return res.status(400).json({ error: "empty prompt" });
-
-  try {
-    const openai = client();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: SYS_PROMPT },
-        { role: "user", content: userMsg }
-      ],
-      functions: FUNCTIONS,
-      function_call: "auto"
+app.post("/api/chat",async(req,res)=>{
+  const user=req.body.message?.trim(); if(!user) return res.status(400).json({error:"empty"});
+  try{
+    const openai=ai();
+    const out=await openai.chat.completions.create({
+      model:"gpt-4o-mini",
+      messages:[{role:"system",content:SYS_PROMPT},{role:"user",content:user}],
+      functions:FUNCTIONS,
+      tool_choice:"auto"                // ← force a function_call
     });
-
-    const msg = completion.choices[0].message;
-
-    /* -- function call ------------------------------------------- */
-    if (msg.function_call) {
-      const fn   = msg.function_call.name;
-      const args = JSON.parse(msg.function_call.arguments || "{}");
-
-      // human‑friendly date words → ISO
-      if (args.date && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(args.date)) {
-        const d = new Date();
-        if (/tomorrow/i.test(args.date)) d.setDate(d.getDate()+1);
-        args.date = d.toISOString().slice(0,10);
+    const m=out.choices[0].message;
+    if(m.function_call){
+      const fn=m.function_call.name; const a=JSON.parse(m.function_call.arguments||"{}");
+      if(a.date&&!/^\d{4}-\d{2}-\d{2}$/.test(a.date)){
+        const d=new Date(); if(/tomorrow/i.test(a.date)) d.setDate(d.getDate()+1);
+        a.date=d.toISOString().slice(0,10);
       }
-
-      if (fn === "add_shift") {
-        const s = { id: randomUUID(), name: args.name, role: args.role, date: args.date, start: toMinutes(args.start), end: toMinutes(args.end), notes: args.notes || "" };
-        shifts.push(s); saveShifts();
-        return res.json({ reply: "OK" });
-      }
-
-      if (fn === "add_pto") {
-        const w = workers.find(x => x.Name === args.name);
-        if (!w) return res.status(404).json({ error: "worker not found" });
-        w.PTO = w.PTO || [];
-        if (!w.PTO.includes(args.date)) w.PTO.push(args.date);
-        saveWorkers();
-        return res.json({ reply: "OK" });
-      }
-
-      if (fn === "move_shift") {
-        const s = shifts.find(x => x.id === args.id);
-        if (!s) return res.status(404).json({ error: "shift not found" });
-        s.start = toMinutes(args.start);
-        s.end   = toMinutes(args.end);
-        saveShifts();
-        return res.json({ reply: "OK" });
-      }
-
-      return res.status(400).json({ error: "unknown function" });
+      if(fn==="add_shift"){shifts.push({id:randomUUID(),name:a.name,role:a.role,date:a.date,start:toMin(a.start),end:toMin(a.end),notes:a.notes||""}); saveShifts(); return res.json({reply:"OK"});}
+      if(fn==="add_pto"){const w=workers.find(x=>x.Name===a.name); if(!w) return res.status(404).json({error:"worker"}); w.PTO=w.PTO||[]; if(!w.PTO.includes(a.date)) w.PTO.push(a.date); saveWorkers(); return res.json({reply:"OK"});}
+      if(fn==="move_shift"){const s=shifts.find(x=>x.id===a.id); if(!s) return res.status(404).json({error:"shift"}); s.start=toMin(a.start); s.end=toMin(a.end); saveShifts(); return res.json({reply:"OK"});}
+      return res.status(400).json({error:"unknown fn"});
     }
-
-       /* -- no function, regular reply ------------------------------ */
-    res.json({ reply: msg.content });
-  } catch (err) {
-    console.error("/api/chat", err);
-    res.status(500).json({ error: "openai failure" });
-  }
+    res.json({reply:m.content});
+  }catch(err){console.error("/api/chat",err); res.status(500).json({error:"openai"});}
 });
 
 /* -------------------------------------------------- export for Vercel */
