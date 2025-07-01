@@ -125,9 +125,11 @@ You are Fortis SchedulerBot.
 • Respond conversationally.
 • If the user asks to add PTO, add a shift, move, or change one, call the **appropriate function**.
 • Strict scheduling rules:
-  – Lunch shifts are always named "Lunch" and are 30-60 min.
+  – Lunch shifts are always named "Lunch" and are 90 min.
   – Do not let shifts overlap for the same employee.
   – PTO blocks out the whole day.
+  - There must always be 3 people scheduled for reservations from 0800-1700.
+  - There must alwasy be 1 person scheduld for dispatch from 0800-1700.
 Return "OK" after function_call responses.
 `.trim();
 
