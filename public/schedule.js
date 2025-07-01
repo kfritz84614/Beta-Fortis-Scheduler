@@ -271,3 +271,20 @@ function openDlg(mode, idx, seed) {
     empIn.value   = workers[seed.row].Name;
     roleSel.selectedIndex = 0;
     startI.value
+//--------------------------------------------------------------
+//  Navigation buttons
+//--------------------------------------------------------------
+document.getElementById('prev').onclick = () => {
+  day.setDate(day.getDate() - 1);
+  draw();
+};
+
+document.getElementById('next').onclick = () => {
+  day.setDate(day.getDate() + 1);
+  draw();
+};
+
+document.getElementById('todayBtn').onclick = () => {
+  day = new Date();
+  draw();
+};
