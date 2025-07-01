@@ -1,70 +1,76 @@
-// public/schedule.js — COMPLETE (draw, dialog, drag, resize, save)
+/**********************************************************************
+ *  Day-view scheduler grid
+ *  – drag-create / resize / move / delete shifts
+ *  – double-click empty cell to add a new shift
+ *  – PTO overlay (grey bar with “PTO”)
+ *  – exports draw() so other modules (chat) can force a redraw
+ *********************************************************************/
 
-/* ---------- helpers & palette -------------------------------- */
+/* ---------- helpers & palette ---------------------------------- */
 const COLORS = {
-  Reservations     : '#16a34a',
-  Dispatch         : '#b91c1c',
-  Security         : '#be185d',
-  Network          : '#475569',
-  'Journey Desk'   : '#65a30d',
-  Marketing        : '#7c3aed',
-  Sales            : '#d97706',
-  'Badges/Projects': '#0ea5e9',
-  Lunch            : '#8b5a2b',
-  PTO              : '#9ca3af'    // ← NEW (mid-grey)
+  Reservations      : '#16a34a',
+  Dispatch          : '#b91c1c',
+  Security          : '#be185d',
+  Network           : '#475569',
+  'Journey Desk'    : '#65a30d',
+  Marketing         : '#7c3aed',
+  Sales             : '#d97706',
+  'Badges/Projects' : '#0ea5e9',
+  Lunch             : '#8b5a2b',
+  PTO               : '#9ca3af'            // overlay colour
 };
 
-const STEP = 15;                               // minutes – snap interval
-const hh  = h => `${String(h).padStart(2,'0')}:00`;
-const fmt = m => `${String(m/60|0).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-const toMin = t => {
+const STEP = 15;                                        // minute snap
+const hh   = h => `${String(h).padStart(2,'0')}:00`;
+const fmt  = m => `${String(m/60|0).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const toMin = t => {                                    // "0815" | "08:15"
   if (!t.includes(':') && t.length === 4) t = t.slice(0,2)+':'+t.slice(2);
   const [h,m] = t.split(':').map(Number);
   return h*60 + m;
 };
 const iso = d => d.toISOString().slice(0,10);
 
-/* ---------- state -------------------------------------------- */
-let workers=[], abilities=[], shifts=[];
-let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
+/* ---------- state ---------------------------------------------- */
+export let workers=[], abilities=[], shifts=[];
+export let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
 
-/* ---------- dom refs ----------------------------------------- */
+/* ---------- DOM refs ------------------------------------------- */
 const grid  = document.getElementById('grid');
 const wrap  = document.getElementById('wrap');
 const dateH = document.getElementById('date');
 const empIn = document.getElementById('empSel');
 const empDl = document.getElementById('workerList');
 
-/* ---------- initial load ------------------------------------- */
-(async () => {
-  [workers, abilities, shifts] = await Promise.all([
+/* ---------- initial load --------------------------------------- */
+(async ()=>{
+  [workers,abilities,shifts] = await Promise.all([
     fetch('/api/workers').then(r=>r.json()),
     fetch('/api/abilities').then(r=>r.json()),
     fetch('/api/shifts').then(r=>r.json())
   ]);
-  empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join('');
   if (!abilities.includes('Lunch')) abilities.push('Lunch');
+  empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join('');
   draw();
 })();
 
-/* ---------- persistence helpers ------------------------------ */
-const saveShift = async s => {
-  const { id } = await fetch('/api/shifts',{
+/* ---------- persistence helpers -------------------------------- */
+const saveShift = async s=>{
+  const {id}=await fetch('/api/shifts',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(s)
   }).then(r=>r.json());
-  if (!s.id) s.id = id;
+  if(!s.id) s.id=id;
 };
 const deleteShift = id => fetch(`/api/shifts/${id}`,{method:'DELETE'});
 
-/* ---------- utils -------------------------------------------- */
-const firstStart = name => {
+/* ---------- utility -------------------------------------------- */
+const firstStart = name=>{
   const x = shifts.filter(s=>s.name===name && s.date===iso(day))
                   .sort((a,b)=>a.start-b.start)[0];
   return x ? x.start : 1441;
 };
-const label = (t,r=1,c=1) => {
+const label = (t,r=1,c=1)=>{
   const d=document.createElement('div');
   d.className='rowLabel';
   d.textContent=t;
@@ -79,37 +85,40 @@ const cell = (r,c,ds={})=>{
   return d;
 };
 
-/* ---------- draw --------------------------------------------- */
-function draw(){
+/* ---------- draw grid ------------------------------------------ */
+export function draw(){
   const sorted=[...workers].sort((a,b)=>{
     const sa=firstStart(a.Name), sb=firstStart(b.Name);
-    return sa!==sb?sa-sb:a.Name.localeCompare(b.Name);
+    return sa!==sb ? sa-sb : a.Name.localeCompare(b.Name);
   });
   const rowOf=Object.fromEntries(sorted.map((w,i)=>[w.Name,i]));
 
   grid.innerHTML='';
   grid.style.gridTemplateRows=`30px repeat(${sorted.length},30px)`;
   grid.appendChild(label(''));
-  for(let h=0; h<24; h++) grid.appendChild(label(hh(h),1,h+2));
+  for(let h=0;h<24;h++) grid.appendChild(label(hh(h),1,h+2));
 
   sorted.forEach((w,r)=>{
     grid.appendChild(label(w.Name,r+2,1));
-    for(let h=0;h<24;h++) grid.appendChild(cell(r+2,h+2,{row:r,hour:h}));
+
+    for(let h=0;h<24;h++)
+      grid.appendChild(cell(r+2,h+2,{row:r,hour:h}));
+
     const band=document.createElement('div');
-    band.className='band'; band.style.gridRow=r+2;
+    band.className='band';
+    band.style.gridRow=r+2;
     grid.appendChild(band);
-/* ---------- PTO overlay (full-row grey bar) ---------- */
-  const wData = workers.find(x => x.Name === w.Name);
-  if (wData?.PTO?.includes(iso(day))) {
-    const p = document.createElement('div');
-    p.className = 'block';
-    p.style.cssText =
-      'left:0;width:100%;background:' + COLORS.PTO + ';opacity:.65';
-    p.textContent     = 'PTO';
-    p.style.pointerEvents = 'none';   // not draggable
-    band.appendChild(p);
-  }
-});
+
+    /* PTO overlay ------------------------------------------------ */
+    if (w.PTO?.includes(iso(day))) {
+      const p=document.createElement('div');
+      p.className='block';
+      p.textContent='PTO';
+      p.style.cssText=`left:0;width:100%;background:${COLORS.PTO};opacity:.7;
+                       pointer-events:none`;
+      band.appendChild(p);
+    }
+  });
 
   shifts.filter(s=>s.date===iso(day))
         .forEach((s,i)=>placeBlock(s,i,rowOf[s.name]));
@@ -118,22 +127,28 @@ function draw(){
   location.hash     = iso(day);
 }
 
-/* ---------- place one block ---------------------------------- */
+/* ---------- place one shift block ------------------------------ */
 function placeBlock(s,idx,row){
-  const band=grid.querySelectorAll('.band')[row]; if(!band) return;
-  const el=document.createElement('div');
+  const band = grid.querySelectorAll('.band')[row]; if(!band) return;
+  const el = document.createElement('div');
   el.className='block';
-  el.style.cssText=`left:${s.start/1440*100}%;width:${(s.end-s.start)/1440*100}%;background:${COLORS[s.role]||'#2563eb'}`;
-  el.textContent=`${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
-  el.ondblclick=()=>openDlg('edit',idx);
+  el.style.cssText =
+    `left:${s.start/1440*100}%;width:${(s.end-s.start)/1440*100}%;
+     background:${COLORS[s.role]||'#2563eb'}`;
+  el.textContent = `${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
+  el.ondblclick  = ()=>openDlg('edit',idx);
 
+  // resize handles
   ['l','r'].forEach(side=>{
     const h=document.createElement('span');
-    h.style=`position:absolute;${side==='l'?'left':'right'}:0;top:0;bottom:0;width:6px;cursor:ew-resize`;
+    h.style=
+      `position:absolute;${side==='l'?'left':'right'}:0;top:0;bottom:0;
+       width:6px;cursor:ew-resize`;
     h.onmousedown=e=>startResize(e,idx,side);
     el.appendChild(h);
   });
 
+  // drag-move body
   el.onmousedown=e=>{
     if(e.target.tagName==='SPAN') return;
     startMove(e,idx,row,el);
@@ -142,7 +157,7 @@ function placeBlock(s,idx,row){
   band.appendChild(el);
 }
 
-/* ---------- resize ------------------------------------------- */
+/* ---------- resize logic --------------------------------------- */
 let rs={};
 function startResize(e,idx,side){
   e.stopPropagation();
@@ -164,7 +179,7 @@ function endResize(){
   rs={}; document.onmousemove=document.onmouseup=null;
 }
 
-/* ---------- move --------------------------------------------- */
+/* ---------- move logic ----------------------------------------- */
 let mv=null;
 function startMove(e,idx,row,orig){
   e.preventDefault();
@@ -174,6 +189,7 @@ function startMove(e,idx,row,orig){
 }
 function doMove(e){
   if(!mv) return;
+  const px=grid.querySelector('.band').getBoundingClientRect().width/1440;
   if(!mv.moved){
     if(Math.abs(e.clientX-mv.startX)<4 && Math.abs(e.clientY-mv.startY)<4) return;
     mv.moved=true;
@@ -182,22 +198,22 @@ function doMove(e){
     mv.preview.style.pointerEvents='none';
     grid.appendChild(mv.preview);
   }
-  const px=grid.querySelector('.band').getBoundingClientRect().width/1440;
   const diff=Math.round((e.clientX-mv.startX)/px/STEP)*STEP;
   const s=shifts[mv.idx];
   let st=Math.max(0,Math.min(1440-STEP,s.start+diff));
   let en=s.end+diff; if(en>1440){st-=en-1440; en=1440;}
-  mv.preview.style.left=st/1440*100+'%';
-  mv.preview.style.width=(en-st)/1440*100+'%';
+  mv.preview.style.left = st/1440*100+'%';
+  mv.preview.style.width= (en-st)/1440*100+'%';
 
   const diffRow=Math.round((e.clientY-mv.startY)/30);
-  const newRow=Math.min(Math.max(0,mv.row+diffRow),workers.length-1);
+  const newRow = Math.min(Math.max(0,mv.row+diffRow),workers.length-1);
   mv.preview.style.gridRow=newRow+2;
 }
 async function endMove(){
   document.onmousemove=document.onmouseup=null;
   if(!mv) return;
 
+  // click = edit
   if(!mv.moved){ openDlg('edit',mv.idx); mv=null; return; }
 
   const px=grid.querySelector('.band').getBoundingClientRect().width/1440;
@@ -214,42 +230,42 @@ async function endMove(){
   await saveShift(s); draw();
 }
 
-/* ---------- drag-create blank box ----------------------------- */
+/* ---------- drag-create blank box ------------------------------ */
 let dc=null;
 grid.onmousedown = e=>{
   if(!e.target.dataset.hour) return;
   dc={
-    row:+e.target.dataset.row,
-    start:+e.target.dataset.hour*60,
-    box:Object.assign(document.createElement('div'),{className:'dragBox'})
+    row  : +e.target.dataset.row,
+    start: +e.target.dataset.hour*60,
+    box  : Object.assign(document.createElement('div'),{className:'dragBox'})
   };
   grid.querySelectorAll('.band')[dc.row].appendChild(dc.box);
 };
 grid.onmousemove = e=>{
   if(!dc || +e.target.dataset.row!==dc.row || !e.target.dataset.hour) return;
   const end=(+e.target.dataset.hour+1)*60;
-  dc.box.style.left = dc.start/1440*100+'%';
-  dc.box.style.width= Math.max(STEP,end-dc.start)/1440*100+'%';
+  dc.box.style.left  = dc.start/1440*100+'%';
+  dc.box.style.width = Math.max(STEP,end-dc.start)/1440*100+'%';
 };
 grid.onmouseup = ()=>{
   if(!dc) return;
   const dur=parseFloat(dc.box.style.width)/100*1440;
   openDlg('new',null,{
-    row:dc.row,
-    start:dc.start,
-    end:dc.start+Math.round(dur/STEP)*STEP
+    row  : dc.row,
+    start: dc.start,
+    end  : dc.start + Math.round(dur/STEP)*STEP
   });
   dc.box.remove(); dc=null;
 };
 
-/* ---------- dialog ------------------------------------------- */
-const dlg    = document.getElementById('shiftDlg');
-const f      = document.getElementById('shiftForm');
-const roleSel= document.getElementById('roleSel');
-const startI = document.getElementById('start');
-const endI   = document.getElementById('end');
-const notesI = document.getElementById('notes');
-const delBtn = document.getElementById('del');
+/* ---------- dialog elements ----------------------------------- */
+const dlg     = document.getElementById('shiftDlg');
+const f       = document.getElementById('shiftForm');
+const roleSel = document.getElementById('roleSel');
+const startI  = document.getElementById('start');
+const endI    = document.getElementById('end');
+const notesI  = document.getElementById('notes');
+const delBtn  = document.getElementById('del');
 
 function fillRoles(sel=''){
   roleSel.innerHTML = abilities
@@ -265,26 +281,25 @@ function openDlg(mode,idx,seed){
   fillRoles();
   if(mode==='edit'){
     const s=shifts[idx];
-    f.index.value=idx;
-    empIn.value  =s.name;
-    roleSel.value=s.role;
-    startI.value =fmt(s.start);
-    endI.value   =fmt(s.end);
-    notesI.value =s.notes||'';
+    f.index.value = idx;
+    empIn.value   = s.name;
+    roleSel.value = s.role;
+    startI.value  = fmt(s.start);
+    endI.value    = fmt(s.end);
+    notesI.value  = s.notes || '';
     delBtn.classList.remove('hidden');
   }else{
-    f.index.value='';
-    empIn.value  =workers[seed.row].Name;
-    roleSel.selectedIndex=0;
-    startI.value=fmt(seed.start);
-    endI.value  =fmt(seed.end);
-    notesI.value='';
+    f.index.value = '';
+    empIn.value   = workers[seed.row].Name;
+    roleSel.selectedIndex = 0;
+    startI.value  = fmt(seed.start);
+    endI.value    = fmt(seed.end);
+    notesI.value  = '';
     delBtn.classList.add('hidden');
   }
   dlg.showModal();
 }
 
-/* ---------- dialog actions ----------------------------------- */
 f.onsubmit = async e=>{
   e.preventDefault();
   const name=empIn.value.trim();
@@ -300,13 +315,11 @@ f.onsubmit = async e=>{
   };
   if(s.start>=s.end) return alert('End must be after start');
 
-  if(f.index.value==='') shifts.push(s);
+  if(f.index.value==='')        shifts.push(s);
   else { s.id=shifts[+f.index.value].id; shifts[+f.index.value]=s; }
-
-  await saveShift(s);
-  dlg.close(); draw();
+  await saveShift(s); dlg.close(); draw();
 };
-delBtn.onclick = async ()=>{
+delBtn.onclick = async()=>{
   const idx=+f.index.value;
   await deleteShift(shifts[idx].id);
   shifts.splice(idx,1);
@@ -314,19 +327,14 @@ delBtn.onclick = async ()=>{
 };
 document.getElementById('cancel').onclick = ()=>dlg.close();
 
-/* ---------- nav buttons -------------------------------------- */
-document.getElementById('prev').onclick   =()=>{day.setDate(day.getDate()-1);draw();};
-document.getElementById('next').onclick   =()=>{day.setDate(day.getDate()+1);draw();};
-document.getElementById('todayBtn').onclick=()=>{day=new Date();draw();};
+/* ---------- nav buttons --------------------------------------- */
+prev.onclick     = ()=>{day.setDate(day.getDate()-1); draw();};
+next.onclick     = ()=>{day.setDate(day.getDate()+1); draw();};
+todayBtn.onclick = ()=>{day=new Date(); draw();};
 
-/* ---------- NEW: double-click empty cell --------------------- */
-grid.ondblclick = e => {
-  if (!e.target.dataset.hour || e.target.className!=='cell') return;
-  const row  = +e.target.dataset.row;
-  const hour = +e.target.dataset.hour;
-  openDlg('new', null, {
-    row,
-    start: hour*60,
-    end  : hour*60 + STEP
-  });
+/* ---------- double-click empty cell → add shift --------------- */
+grid.ondblclick = e=>{
+  if(!e.target.dataset.hour || e.target.className!=='cell') return;
+  const row=+e.target.dataset.row, hour=+e.target.dataset.hour;
+  openDlg('new',null,{row,start:hour*60,end:hour*60+STEP});
 };
