@@ -1,137 +1,124 @@
-<!-- public/schedule.html  (2025-07-01) -->
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-gray-100">
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Fortis • Day Schedule</title>
-
-  <!-- Tailwind (via CDN for simplicity) -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fortis • Day View</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
-    /* ────── grid ────── */
-    #grid{display:grid;grid-template-columns:150px repeat(24,1fr)}
-    #grid>.rowLabel{grid-column:1;background:#f3f4f6;
-                    border-bottom:1px solid #ddd;padding:2px 4px;font-size:.75rem}
-    #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
-    .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
-          pointer-events:none}
-    .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
-           line-height:1rem;padding-left:4px;color:#fff;cursor:pointer;pointer-events:auto}
+    /* grid --------------------------------------------------------- */
+    #grid{
+      display:grid;
+      grid-template-columns:150px repeat(24,1fr);
+      min-width:1400px;                 /* ← NEW: prevent header squeeze */
+    }
+    #grid>.rowLabel{
+      grid-column:1;background:#f3f4f6;border-bottom:1px solid #ddd;
+      padding:2px 4px;font-size:.75rem
+    }
+    #grid>.cell{
+      border-bottom:1px solid #eee;border-right:1px solid #eee
+    }
+
+    /* band hosts blocks; click-through when empty ------------------ */
+    .band{
+      position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
+      pointer-events:none
+    }
+    /* blocks stay interactive */
+    .block{
+      position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
+      line-height:1rem;padding-left:4px;color:#fff;cursor:pointer;
+      pointer-events:auto
+    }
+
     .dragBox{position:absolute;background:rgba(59,130,246,.35)}
-    #wrap{overflow:auto;max-width:100vw;max-height:78vh}
+    #wrap{overflow:auto;max-width:100vw;max-height:80vh}
 
-    /* ────── shift dialog ────── */
+    /* dialog ------------------------------------------------------- */
     #shiftDlg{border:none;border-radius:.5rem;background:#fff}
-    #shiftDlg form{width:20rem}
-
-    /* ────── chat widget ────── */
-    #chatPane{position:fixed;right:1rem;bottom:1rem;width:270px;
-              background:#fff;border:1px solid #d1d5db;border-radius:.5rem;
-              display:flex;flex-direction:column;box-shadow:0 4px 14px rgba(0,0,0,.12);
-              font-size:.875rem}
-    #chatPane header{background:#f8fafc;padding:.5rem;font-weight:600}
-    #chatLog{flex:1;overflow:auto;padding:.5rem;display:flex;
-            flex-direction:column;gap:.5rem}
-    #chatLog .user{align-self:flex-end;background:#2563eb;color:#fff}
-    #chatLog .bot {align-self:flex-start;background:#f3f4f6;color:#334155}
-    #chatLog .bubble{padding:.4rem .5rem;border-radius:.375rem;max-width:90%}
-    #chatForm{display:flex;border-top:1px solid #e5e7eb}
-    #chatInput{flex:1;padding:.5rem;font-size:.875rem;border:0;outline:none;
-               resize:none}
-    #chatSend{padding:.5rem .75rem;color:#2563eb;font-weight:700}
+    #shiftDlg form{width:20rem;padding:1.5rem}
+    #shiftDlg .field{margin-bottom:.75rem}
+    #shiftDlg label{display:block;margin-bottom:.25rem;font-size:.875rem}
+    #shiftDlg input,#shiftDlg select,#shiftDlg textarea{
+      width:100%;padding:.5rem;font-size:.875rem;border:1px solid #d1d5db;border-radius:.25rem}
   </style>
 </head>
 
-<body class="h-full flex flex-col">
+<body class="bg-gray-100">
 
-  <!-- top nav ---------------------------------------------------- -->
-  <nav class="flex items-center gap-6 px-4 py-2 bg-white shadow-sm">
-    <a href="schedule.html" class="font-semibold">Schedule</a>
-    <a href="index.html"    class="text-blue-600">Workers</a>
-    <a href="admin.html"    class="text-blue-600">Admin</a>
+  <!-- navigation -->
+  <header class="p-4 flex items-center gap-4">
+    <a href="/" class="font-semibold">Schedule</a>
+    <a href="/index.html" class="text-blue-600">Workers</a>
+    <a href="/admin.html" class="text-blue-600">Admin</a>
 
-    <div class="ml-auto flex items-center gap-2">
-      <button id="prev" class="px-2 py-1 rounded bg-slate-200 hover:bg-slate-300">
-        &#8592;
-      </button>
-      <h1 id="date" class="w-56 text-center font-medium text-lg select-none"></h1>
-      <button id="next" class="px-2 py-1 rounded bg-slate-200 hover:bg-slate-300">
-        &#8594;
-      </button>
+    <button id="prev" class="ml-4 px-2 py-1 bg-slate-200 rounded">&#8592;</button>
+    <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
+    <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
 
-      <button id="todayBtn"
-              class="ml-2 px-3 py-1 rounded bg-emerald-600 text-white shadow">
-        today
-      </button>
-    </div>
-  </nav>
+    <button id="todayBtn"
+            class="px-3 py-1 bg-emerald-600 text-white rounded shadow">
+      today
+    </button>
+  </header>
 
-  <!-- schedule grid --------------------------------------------- -->
-  <div id="wrap" class="mx-auto mt-4 bg-white shadow">
+  <!-- schedule grid -->
+  <div id="wrap" class="mx-auto bg-white shadow w-fit">
     <div id="grid"></div>
   </div>
 
-  <!-- shift dialog ---------------------------------------------- -->
+  <!-- shift dialog -->
   <dialog id="shiftDlg">
-    <form id="shiftForm" method="dialog" class="flex flex-col gap-4 p-6">
+    <form id="shiftForm" method="dialog">
       <input type="hidden" name="index">
 
-      <label class="text-sm">Employee
-        <input id="empSel" list="workerList" class="w-full border rounded p-2 mt-1"
-               placeholder="Start typing…" autocomplete="off" required>
+      <div class="field">
+        <label>Employee</label>
+        <input id="empSel" list="workerList" name="emp"
+               placeholder="Start typing a name…" autocomplete="off" required>
         <datalist id="workerList"></datalist>
-      </label>
-
-      <label class="text-sm">Shift type
-        <select id="roleSel" class="w-full border rounded p-2 mt-1"></select>
-      </label>
-
-      <div class="grid grid-cols-2 gap-4">
-        <label class="text-sm">Start&nbsp;(24h)
-          <input id="start" class="w-full border rounded p-2 mt-1"
-                 placeholder="0815"
-                 pattern="^([01]?\\d|2[0-3]):?[0-5]\\d$" required>
-        </label>
-
-        <label class="text-sm">End&nbsp;(24h)
-          <input id="end" class="w-full border rounded p-2 mt-1"
-                 placeholder="1245"
-                 pattern="^([01]?\\d|2[0-3]):?[0-5]\\d$" required>
-        </label>
       </div>
 
-      <label class="text-sm">Notes
-        <textarea id="notes" rows="2" class="w-full border rounded p-2 mt-1"></textarea>
-      </label>
+      <div class="field">
+        <label>Shift type</label>
+        <select id="roleSel" name="role"></select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div class="flex flex-col field">
+          <label>Start&nbsp;(24h)</label>
+          <input id="start" name="start" type="text"
+                 placeholder="0815"
+                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
+        </div>
+        <div class="flex flex-col field">
+          <label>End&nbsp;(24h)</label>
+          <input id="end" name="end" type="text"
+                 placeholder="1245"
+                 pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="notes" name="notes" rows="2"></textarea>
+      </div>
 
       <div class="flex justify-end gap-3 pt-1">
-        <button class="px-4 py-1 rounded bg-blue-600 text-white">Save</button>
+        <button class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
         <button type="button" id="del"
-                class="px-3 py-1 rounded bg-red-600 text-white hidden">
-          Delete
-        </button>
+                class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
         <button type="button" id="cancel"
-                class="px-3 py-1 rounded bg-gray-400 text-white">Cancel</button>
+                class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
       </div>
     </form>
   </dialog>
 
-  <!-- chat widget ----------------------------------------------- -->
-  <div id="chatPane">
-    <header>SydPo&nbsp;Bot</header>
+  <!-- chat widget placeholder -->
+  <div id="chatBox" style="position:fixed;bottom:1rem;right:1rem;width:260px;"></div>
 
-    <div id="chatLog"></div>
-
-    <form id="chatForm">
-      <textarea id="chatInput" rows="1" placeholder="Ask me to add PTO…"
-                class="placeholder:text-slate-400"></textarea>
-      <button type="submit" id="chatSend">&#x27A4;</button>
-    </form>
-  </div>
-
-  <!-- main module ------------------------------------------------ -->
   <script type="module" src="schedule.js"></script>
 </body>
 </html>
