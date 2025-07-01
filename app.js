@@ -99,68 +99,57 @@ app.delete("/api/shifts/:id", (req,res)=>{
 
 /* -------------------------------------------------- OpenAI chat */
 let _openai; const ai=()=>_openai||(_openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY}));
-const SYS_PROMPT="You are Fortis SchedulerBot. Map natural language to add_shift, add_pto, move_shift and reply OK.";
+const SYS_PROMPT="You are Fortis SchedulerBot. Convert user requests into add_shift, add_pto, or move_shift tool calls and reply with OK.";
 
-// tools array (new API structure)
-const TOOLS = [
-  { type:"function", function:{
-      name:"add_shift",
-      description:"Add a work shift",
-      parameters:{type:"object",properties:{name:{type:"string"},role:{type:"string"},date:{type:"string"},start:{type:"string"},end:{type:"string"},notes:{type:"string",nullable:true}},required:["name","role","date","start","end"]}
-  }},
-  { type:"function", function:{
-      name:"add_pto",
-      description:"Add PTO day",
-      parameters:{type:"object",properties:{name:{type:"string"},date:{type:"string"}},required:["name","date"]}
-  }},
-  { type:"function", function:{
-      name:"move_shift",
-      description:"Move an existing shift",
-      parameters:{type:"object",properties:{id:{type:"string"},start:{type:"string"},end:{type:"string"}},required:["id","start","end"]}
-  }}
+const TOOLS=[
+  {type:"function",function:{name:"add_shift",description:"Add a work shift",parameters:{type:"object",properties:{name:{type:"string"},role:{type:"string"},date:{type:"string"},start:{type:"string"},end:{type:"string"},notes:{type:"string",nullable:true}},required:["name","role","date","start","end"]}}},
+  {type:"function",function:{name:"add_pto",description:"Add PTO",parameters:{type:"object",properties:{name:{type:"string"},date:{type:"string"}},required:["name","date"]}}},
+  {type:"function",function:{name:"move_shift",description:"Move a shift",parameters:{type:"object",properties:{id:{type:"string"},start:{type:"string"},end:{type:"string"}},required:["id","start","end"]}}}
 ];
+const toMin=s=>{const d=s.replace(/[^0-9]/g,"").padStart(4,"0"); return +d.slice(0,2)*60 + +d.slice(2);};
 
-const toMin = s => {const d=s.replace(/[^0-9]/g,"").padStart(4,"0"); return +d.slice(0,2)*60 + +d.slice(2)};
-
-app.post("/api/chat", async (req,res)=>{
+app.post("/api/chat",async(req,res)=>{
   const user=req.body.message?.trim(); if(!user) return res.status(400).json({error:"empty"});
   try{
-    const openai=ai();
-    const out = await openai.chat.completions.create({
+    const out=await ai().chat.completions.create({
       model:"gpt-4o-mini",
       messages:[{role:"system",content:SYS_PROMPT},{role:"user",content:user}],
       tools:TOOLS,
-      tool_choice:"auto"                    // forces a function call
+      tool_choice:"auto"
     });
 
-    const m=out.choices[0].message;
-    if(m.tool_call){                       // new field name in v4 SDK
-      const { name:fn, arguments:argStr } = m.tool_call;
-      const a = JSON.parse(argStr||"{}");
+    const msg=out.choices[0].message;
+    if(Array.isArray(msg.tool_calls) && msg.tool_calls.length){
+      for(const call of msg.tool_calls){
+        const fn = call.function.name;
+        const args = JSON.parse(call.function.arguments||"{}");
 
-      if(a.date && !/^\d{4}-\d{2}-\d{2}$/.test(a.date)){
-        const d=new Date(); if(/tomorrow/i.test(a.date)) d.setDate(d.getDate()+1);
-        a.date=d.toISOString().slice(0,10);
-      }
+        if(args.date && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(args.date)){
+          const d=new Date(); if(/tomorrow/i.test(args.date)) d.setDate(d.getDate()+1);
+          args.date=d.toISOString().slice(0,10);
+        }
 
-      if(fn==="add_shift"){
-        shifts.push({id:randomUUID(),name:a.name,role:a.role,date:a.date,start:toMin(a.start),end:toMin(a.end),notes:a.notes||""});
-        saveShifts(); return res.json({reply:"OK"});
+        if(fn==="add_shift"){
+          shifts.push({id:randomUUID(),name:args.name,role:args.role,date:args.date,start:toMin(args.start),end:toMin(args.end),notes:args.notes||""});
+          saveShifts();
+        }
+        else if(fn==="add_pto"){
+          const w=workers.find(x=>x.Name===args.name); if(!w) return res.status(404).json({error:"worker"});
+          w.PTO=w.PTO||[]; if(!w.PTO.includes(args.date)) w.PTO.push(args.date); saveWorkers();
+        }
+        else if(fn==="move_shift"){
+          const s=shifts.find(x=>x.id===args.id); if(!s) return res.status(404).json({error:"shift"});
+          s.start=toMin(args.start); s.end=toMin(args.end); saveShifts();
+        }
+        else {
+          return res.status(400).json({error:"unknown fn"});
+        }
       }
-      if(fn==="add_pto"){
-        const w=workers.find(x=>x.Name===a.name); if(!w) return res.status(404).json({error:"worker"});
-        w.PTO=w.PTO||[]; if(!w.PTO.includes(a.date)) w.PTO.push(a.date); saveWorkers();
-        return res.json({reply:"OK"});
-      }
-      if(fn==="move_shift"){
-        const s=shifts.find(x=>x.id===a.id); if(!s) return res.status(404).json({error:"shift"});
-        s.start=toMin(a.start); s.end=toMin(a.end); saveShifts();
-        return res.json({reply:"OK"});
-      }
-      return res.status(400).json({error:"unknown fn"});
+      return res.json({reply:"OK"});
     }
 
-    res.json({reply:m.content});
+    // no tool call
+    res.json({reply:msg.content||"[no reply]"});
   }catch(err){console.error("/api/chat",err); res.status(500).json({error:"openai"});}
 });
 
