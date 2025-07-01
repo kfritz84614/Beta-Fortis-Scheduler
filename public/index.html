@@ -1,49 +1,41 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Fortis Scheduler</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 2rem;
-      background: #f9f9f9;
-    }
-    h1 {
-      color: #2c3e50;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 1rem;
-    }
-    th, td {
-      padding: 8px 12px;
-      border: 1px solid #ccc;
-    }
-    th {
-      background: #2c3e50;
-      color: white;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fortis • Workers</title>
+  <!-- Tailwind Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-  <h1>Fortis Weekly Schedule</h1>
-  <table id="schedule-table">
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Working Hours</th>
-        <th>Lunch Time</th>
-        <th>Primary</th>
-        <th>Secondary</th>
-        <th>Tertiary</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<body class="bg-gray-100 text-slate-800">
+  <!-- ───────── shared navigation bar ───────── -->
+  <header class="bg-white shadow">
+    <div class="max-w-6xl mx-auto h-12 flex items-center gap-6 px-4">
+      <a href="/schedule.html" class="text-blue-600 hover:underline">Schedule</a>
+      <a href="/"              class="font-semibold">Workers</a>
+      <a href="/admin.html"    class="text-blue-600 hover:underline">Admin</a>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    <h1 class="text-2xl font-bold mb-4">Fortis Worker Profiles</h1>
+
+    <div class="overflow-x-auto bg-white shadow rounded">
+      <table id="schedule-table" class="min-w-full text-sm">
+        <thead class="bg-slate-800 text-white">
+          <tr>
+            <th class="px-3 py-2 text-left">Name</th>
+            <th class="px-3 py-2 text-left">Working Hours</th>
+            <th class="px-3 py-2 text-left">Lunch Time</th>
+            <th class="px-3 py-2 text-left">Primary</th>
+            <th class="px-3 py-2 text-left">Secondary</th>
+            <th class="px-3 py-2 text-left">Tertiary</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
 
   <script>
     fetch('/api/workers')
@@ -53,12 +45,12 @@
         data.forEach(worker => {
           const row = document.createElement('tr');
           row.innerHTML = `
-            <td>${worker.Name}</td>
-            <td>${worker["Working Hours"]}</td>
-            <td>${worker["Lunch Time"]}</td>
-            <td>${worker["Primary Ability"]}</td>
-            <td>${worker["Secondary Ability"]}</td>
-            <td>${worker["Tertiary Ability"]}</td>
+            <td class="border px-3 py-1">${worker.Name}</td>
+            <td class="border px-3 py-1">${worker["Working Hours"]}</td>
+            <td class="border px-3 py-1">${worker["Lunch Time"]}</td>
+            <td class="border px-3 py-1">${worker["Primary Ability"]}</td>
+            <td class="border px-3 py-1">${worker["Secondary Ability"]}</td>
+            <td class="border px-3 py-1">${worker["Tertiary Ability"]}</td>
           `;
           tbody.appendChild(row);
         });
