@@ -2,151 +2,140 @@
 //  Replaces earlier truncated versions that threw syntax errors.
 // ---------------------------------------------------------------------------
 
-/* ---------- configuration ---------- */
-const STEP = 15; // minutes granularity
+/* ---------- CONFIG ---------- */
+const STEP = 15;
 const COLORS = {
-  Reservations: "#16a34a",
-  Dispatch: "#b91c1c",
-  Security: "#be185d",
-  Network: "#475569",
-  "Journey Desk": "#65a30d",
-  Marketing: "#7c3aed",
-  Sales: "#d97706",
-  "Badges/Projects": "#0ea5e9",
-  Lunch: "#8b5a2b"
+  Reservations:     "#16a34a",
+  Dispatch:         "#b91c1c",
+  Security:         "#be185d",
+  Network:          "#475569",
+  "Journey Desk":   "#65a30d",
+  Marketing:        "#7c3aed",
+  Sales:            "#d97706",
+  "Badges/Projects":"#0ea5e9",
+  Lunch:            "#8b5a2b"
 };
 
-/* ---------- helper functions ---------- */
-const hh = h => `${String(h).padStart(2, "0")}:00`;
-const fmt = m => `${String((m / 60) | 0).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-const toMin = t => {
-  if (!t.includes(":" ) && t.length === 4) t = t.slice(0, 2) + ":" + t.slice(2);
-  const [h, m] = t.split(":" ).map(Number);
-  return h * 60 + m;
+/* ---------- HELPERS ---------- */
+const hh   = h => `${String(h).padStart(2, "0")}:00`;
+const fmt  = m => `${String((m/60)|0).padStart(2, "0")}:${String(m%60).padStart(2, "0")}`;
+const toMin= t => {
+  if (!t.includes(":" ) && t.length === 4) t = t.slice(0,2)+":"+t.slice(2);
+  const [h,m] = t.split(":" ).map(Number);
+  return h*60 + m;
 };
-const iso = d => d.toISOString().slice(0, 10);
+const iso  = d => d.toISOString().slice(0,10);
 
-/* ---------- state ---------- */
-let workers = [],
-  abilities = [],
-  shifts = [];
+// PTO checker
+const hasPTO = (name, dateIso) => {
+  const w = workers.find(w => w.Name === name);
+  return w?.PTO?.includes(dateIso);
+};
+
+/* ---------- STATE ---------- */
+let workers=[], abilities=[], shifts=[];
 let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
 
-/* ---------- DOM refs ---------- */
-const grid = document.getElementById("grid");
-const wrap = document.getElementById("wrap");
-const dateH = document.getElementById("date");
-const empDl = document.getElementById("workerList");
-const prevBtn = document.getElementById("prev");
-const nextBtn = document.getElementById("next");
+/* ---------- DOM REFS ---------- */
+const grid     = document.getElementById("grid");
+const wrap     = document.getElementById("wrap");
+const dateH    = document.getElementById("date");
+const empDl    = document.getElementById("workerList");
+const prevBtn  = document.getElementById("prev");
+const nextBtn  = document.getElementById("next");
 const todayBtn = document.getElementById("todayBtn");
 
-/* ---------- initial load ---------- */
+/* ---------- INIT DATA ---------- */
 (async () => {
   [workers, abilities, shifts] = await Promise.all([
-    fetch("/api/workers").then(r => r.json()),
-    fetch("/api/abilities").then(r => r.json()),
-    fetch("/api/shifts").then(r => r.json())
+    fetch("/api/workers" ).then(r=>r.json()),
+    fetch("/api/abilities").then(r=>r.json()),
+    fetch("/api/shifts"   ).then(r=>r.json())
   ]);
-  if (!abilities.includes("Lunch")) abilities.push("Lunch");
-  empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+  empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join("");
   draw();
   initChat();
 })();
 
-/* ---------- persistence helpers ---------- */
-const saveShift = async s => {
-  const res = await fetch("/api/shifts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(s)
-  }).then(r => r.json());
-  if (!s.id) s.id = res.id;
+/* ---------- PERSIST ---------- */
+const saveShift   = async s => {
+  const { id } = await fetch("/api/shifts", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(s)
+  }).then(r=>r.json());
+  if (!s.id) s.id=id;
 };
-const deleteShift = id => fetch(`/api/shifts/${id}`, { method: "DELETE" });
+const deleteShift = id => fetch(`/api/shifts/${id}`, { method:"DELETE" });
 
 /* ==========================================================================
    GRID RENDERING
    ========================================================================== */
-function firstStart(name) {
-  const f = shifts
-    .filter(s => s.name === name && s.date === iso(day))
-    .sort((a, b) => a.start - b.start)[0];
-  return f ? f.start : 1441;
+function firstStart(name){
+  const f=shifts.filter(s=>s.name===name && s.date===iso(day)).sort((a,b)=>a.start-b.start)[0];
+  return f?f.start:1441;
 }
 
-function draw() {
-  const sorted = [...workers].sort((a, b) => {
-    const sa = firstStart(a.Name),
-      sb = firstStart(b.Name);
-    return sa !== sb ? sa - sb : a.Name.localeCompare(b.Name);
+function draw(){
+  const sorted=[...workers].sort((a,b)=>{
+    const sa=firstStart(a.Name), sb=firstStart(b.Name);
+    return sa!==sb?sa-sb:a.Name.localeCompare(b.Name);
   });
-  const rowOf = Object.fromEntries(sorted.map((w, i) => [w.Name, i]));
+  const rowOf=Object.fromEntries(sorted.map((w,i)=>[w.Name,i]));
 
-  grid.innerHTML = "";
-  grid.style.gridTemplateRows = `30px repeat(${sorted.length},30px)`;
+  grid.innerHTML="";
+  grid.style.gridTemplateRows=`30px repeat(${sorted.length},30px)`;
 
   grid.appendChild(lbl(""));
-  for (let h = 0; h < 24; h++) grid.appendChild(lbl(hh(h), 1, h + 2));
+  for(let h=0;h<24;h++) grid.appendChild(lbl(hh(h),1,h+2));
 
-  sorted.forEach((w, r) => {
-    grid.appendChild(lbl(w.Name, r + 2, 1));
-    for (let h = 0; h < 24; h++) grid.appendChild(cell(r + 2, h + 2, { row: r, hour: h }));
-    const band = document.createElement("div");
-    band.className = "band";
-    band.style.gridRow = r + 2;
+  sorted.forEach((w,r)=>{
+    const pto=hasPTO(w.Name, iso(day));
+
+    const label=lbl(w.Name,r+2,1);
+    if(pto) label.style.background="#e5e7eb";
+    grid.appendChild(label);
+
+    for(let h=0;h<24;h++){
+      const c=cell(r+2,h+2,{row:r,hour:h});
+      if(pto) c.style.background="#f9fafb";
+      grid.appendChild(c);
+    }
+
+    const band=document.createElement("div");
+    band.className="band"; band.style.gridRow=r+2;
+    if(pto) band.style.background="rgba(0,0,0,.05)";
     grid.appendChild(band);
   });
 
-  shifts
-    .filter(s => s.date === iso(day))
-    .forEach(s => placeBlock(s, shifts.indexOf(s), rowOf[s.name]));
+  shifts.filter(s=>s.date===iso(day)).forEach(s=>placeBlock(s,shifts.indexOf(s),rowOf[s.name]));
 
-  dateH.textContent = day.toDateString();
-  location.hash = iso(day);
+  dateH.textContent=day.toDateString();
+  location.hash=iso(day);
 }
 
-const lbl = (t, r = 1, c = 1) => {
-  const d = document.createElement("div");
-  d.className = "rowLabel";
-  d.textContent = t;
-  d.style.gridRow = r;
-  d.style.gridColumn = c;
-  return d;
+const lbl=(t,r=1,c=1)=>{
+  const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d;
 };
-const cell = (r, c, ds = {}) => {
-  const d = document.createElement("div");
-  d.className = "cell";
-  d.style.gridRow = r;
-  d.style.gridColumn = c;
-  Object.assign(d.dataset, ds);
-  return d;
+const cell=(r,c,ds={})=>{
+  const d=document.createElement("div"); d.className="cell"; d.style.gridRow=r; d.style.gridColumn=c; Object.assign(d.dataset,ds); return d;
 };
 
-/* ---------- blocks ---------- */
-function placeBlock(s, idx, row) {
-  const band = grid.querySelectorAll(".band")[row];
-  if (!band) return;
-  const el = document.createElement("div");
-  el.className = "block";
-  el.style.left = `${(s.start / 1440) * 100}%`;
-  el.style.width = `${((s.end - s.start) / 1440) * 100}%`;
-  el.style.background = COLORS[s.role] || "#2563eb";
-  el.textContent = `${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
-  el.ondblclick = () => openDlg("edit", idx);
+/* ---------- BLOCKS ---------- */
+function placeBlock(s,idx,row){
+  const band=grid.querySelectorAll(".band")[row]; if(!band) return;
+  const el=document.createElement("div"); el.className="block";
+  el.style.left=`${s.start/1440*100}%`;
+  el.style.width=`${(s.end-s.start)/1440*100}%`;
+  el.style.background=COLORS[s.role]||"#2563eb";
+  el.textContent=`${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
+  el.ondblclick=()=>openDlg("edit",idx);
 
-  ["l", "r"].forEach(side => {
-    const h = document.createElement("span");
-    h.style.cssText =
-      "position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;" +
-      (side === "l" ? "left:0;" : "right:0;");
-    h.onmousedown = e => startResize(e, idx, side);
+  ["l","r"].forEach(side=>{
+    const h=document.createElement("span");
+    h.style.cssText="position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;"+(side==="l"?"left:0;":"right:0;");
+    h.onmousedown=e=>startResize(e,idx,side);
     el.appendChild(h);
   });
-  el.onmousedown = e => {
-    if (e.target.tagName === "SPAN") return;
-    startMove(e, idx, row, el);
-  };
+  el.onmousedown=e=>{ if(e.target.tagName==="SPAN") return; startMove(e,idx,row,el); };
   band.appendChild(el);
 }
 
@@ -361,50 +350,42 @@ todayBtn.onclick = () => { day = new Date(); draw(); };
 /* ==========================================================================
    CHAT WIDGET
    ========================================================================== */
-function initChat() {
-  const host = document.getElementById("chatBox");
-  host.innerHTML = `
-    <div class="bg-white rounded shadow flex flex-col h-72">
-      <div class="px-3 py-1 font-semibold border-b">SydPo Bot</div>
-      <div id="chatLog" class="flex-1 overflow-y-auto space-y-1 p-2 text-sm"></div>
-      <div class="border-t p-2 flex gap-2">
-        <input id="chatInput" type="text" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="Ask me…" autocomplete="off"/>
-        <button id="chatSend" class="text-blue-600 text-xl">&#x27A4;</button>
-      </div>
-    </div>`;
+function initChat(){
+  const host=document.getElementById("chatBox");
+  host.innerHTML=`<div class="bg-white rounded shadow flex flex-col h-72">
+    <div class="px-3 py-1 font-semibold border-b">SydPo Bot</div>
+    <div id="chatLog" class="flex-1 overflow-y-auto space-y-1 p-2 text-sm"></div>
+    <div class="border-t p-2 flex gap-2">
+      <input id="chatInput" type="text" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="Ask me…" />
+      <button id="chatSend" class="text-blue-600 text-xl">&#x27A4;</button>
+    </div>
+  </div>`;
 
-  const log   = host.querySelector("#chatLog");
-  const input = host.querySelector("#chatInput");
-  const send  = host.querySelector("#chatSend");
+  const log=host.querySelector("#chatLog"), input=host.querySelector("#chatInput"), send=host.querySelector("#chatSend");
 
-  const addMsg = (txt, who) => {
-    const el = document.createElement("div");
-    el.className = who === "user" ? "text-right" : "";
-    el.innerHTML = `<span class="inline-block px-2 py-1 rounded ${who === "user" ? "bg-blue-200" : "bg-gray-200"}">${txt}</span>`;
-    log.appendChild(el);
-    log.scrollTop = log.scrollHeight;
+  const addMsg=(txt,who)=>{
+    const e=document.createElement("div"); e.className=who==="user"?"text-right":"";
+    e.innerHTML=`<span class="inline-block px-2 py-1 rounded ${who==="user"?"bg-blue-200":"bg-gray-200"}">${txt}</span>`;
+    log.appendChild(e); log.scrollTop=log.scrollHeight;
   };
 
-  async function sendChat(msg) {
-    addMsg(msg, "user");
-    input.value = "";
-    try {
-      const res = await fetch("/api/chat", {
-        method : "POST",
-        headers: { "Content-Type": "application/json" },
-        body   : JSON.stringify({ message: msg })
-      }).then(r => r.json());
-      addMsg(res.reply || "[no reply]", "bot");
-      if ((res.reply || "").trim().toUpperCase() === "OK") {
-        shifts = await fetch("/api/shifts").then(r => r.json());
+  async function sendChat(msg){
+    addMsg(msg,"user"); input.value="";
+    try{
+      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg})}).then(r=>r.json());
+      addMsg(res.reply||"[no reply]","bot");
+      if((res.reply||"").trim().toUpperCase()==="OK"){
+        [workers,shifts]=await Promise.all([
+          fetch("/api/workers").then(r=>r.json()),
+          fetch("/api/shifts" ).then(r=>r.json())
+        ]);
+        empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join("");
         draw();
       }
-    } catch (err) {
-      addMsg("[error]", "bot");
-    }
+    }catch(err){ addMsg("[error]","bot"); }
   }
 
-  send.onclick    = () => input.value.trim() && sendChat(input.value.trim());
-  input.onkeydown = e => { if (e.key === "Enter") send.click(); };
+  send.onclick=()=> input.value.trim() && sendChat(input.value.trim());
+  input.onkeydown=e=>{ if(e.key==="Enter") send.click(); };
   input.focus();
 }
