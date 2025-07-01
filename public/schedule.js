@@ -2,15 +2,16 @@
 
 /* ---------- helpers & palette -------------------------------- */
 const COLORS = {
-  Reservations      : '#16a34a',
-  Dispatch          : '#b91c1c',
-  Security          : '#be185d',
-  Network           : '#475569',
-  'Journey Desk'    : '#65a30d',
-  Marketing         : '#7c3aed',
-  Sales             : '#d97706',
-  'Badges/Projects' : '#0ea5e9',
-  Lunch             : '#8b5a2b'   // NEW shift-type colour
+  Reservations     : '#16a34a',
+  Dispatch         : '#b91c1c',
+  Security         : '#be185d',
+  Network          : '#475569',
+  'Journey Desk'   : '#65a30d',
+  Marketing        : '#7c3aed',
+  Sales            : '#d97706',
+  'Badges/Projects': '#0ea5e9',
+  Lunch            : '#8b5a2b',
+  PTO              : '#9ca3af'    // ← NEW (mid-grey)
 };
 
 const STEP = 15;                               // minutes – snap interval
@@ -97,7 +98,18 @@ function draw(){
     const band=document.createElement('div');
     band.className='band'; band.style.gridRow=r+2;
     grid.appendChild(band);
-  });
+/* ---------- PTO overlay (full-row grey bar) ---------- */
+  const wData = workers.find(x => x.Name === w.Name);
+  if (wData?.PTO?.includes(iso(day))) {
+    const p = document.createElement('div');
+    p.className = 'block';
+    p.style.cssText =
+      'left:0;width:100%;background:' + COLORS.PTO + ';opacity:.65';
+    p.textContent     = 'PTO';
+    p.style.pointerEvents = 'none';   // not draggable
+    band.appendChild(p);
+  }
+});
 
   shifts.filter(s=>s.date===iso(day))
         .forEach((s,i)=>placeBlock(s,i,rowOf[s.name]));
