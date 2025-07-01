@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Fortis • Day View</title>
+  <title>Fortis • Schedule</title>
+  <!-- Tailwind Play CDN (fine for now) -->
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
@@ -13,10 +14,9 @@
                     padding:2px 4px;font-size:.75rem}
     #grid>.cell{border-bottom:1px solid #eee;border-right:1px solid #eee}
 
-    /* band hosts blocks; click-through when empty ------------------ */
-    .band {position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
-           pointer-events:none}
-    /* blocks stay interactive */
+    /* band hosts blocks ------------------------------------------- */
+    .band{position:relative;height:100%;grid-column:2/-1;border-bottom:1px solid #eee;
+          pointer-events:none}
     .block{position:absolute;top:2px;bottom:2px;border-radius:3px;font-size:.65rem;
            line-height:1rem;padding-left:4px;color:#fff;cursor:pointer;
            pointer-events:auto}
@@ -34,32 +34,36 @@
   </style>
 </head>
 
-<body class="bg-gray-100">
+<body class="bg-gray-100 text-slate-800">
+  <!-- ───────── shared navigation bar ───────── -->
+  <header class="bg-white shadow">
+    <div class="max-w-6xl mx-auto h-12 flex items-center gap-6 px-4">
+      <a href="/schedule.html" class="font-semibold">Schedule</a>
+      <a href="/"              class="text-blue-600 hover:underline">Workers</a>
+      <a href="/admin.html"    class="text-blue-600 hover:underline">Admin</a>
 
-  <!-- navigation -->
-  <header class="p-4 flex items-center gap-4">
-    <button id="prev" class="px-2 py-1 bg-slate-200 rounded">&#8592;</button>
-    <h1 id="date" class="text-xl font-bold flex-1 text-center"></h1>
-    <button id="next" class="px-2 py-1 bg-slate-200 rounded">&#8594;</button>
-
-    <button id="todayBtn"
-            class="px-3 py-1 bg-emerald-600 text-white rounded shadow">
-      today
-    </button>
-
-    <a href="/"            class="ml-4 text-blue-600 underline">table</a>
-    <a href="/admin.html"  class="text-blue-600 underline">admin</a>
+      <span class="ml-auto flex gap-2 items-center">
+        <button id="prev"   class="px-2 py-0.5 rounded bg-gray-200">&larr;</button>
+        <button id="todayBtn"
+                class="px-3 py-0.5 rounded bg-green-600 text-white">today</button>
+        <button id="next"   class="px-2 py-0.5 rounded bg-gray-200">&rarr;</button>
+      </span>
+    </div>
   </header>
 
-  <!-- schedule grid -->
-  <div id="wrap" class="mx-auto bg-white shadow w-fit">
-    <div id="grid"></div>
-  </div>
+  <!-- ───────── date heading & grid ───────── -->
+  <main class="max-w-6xl mx-auto px-4 py-4 space-y-4">
+    <h2 id="date" class="text-lg font-semibold text-center"></h2>
 
-  <!-- shift dialog -->
+    <div id="wrap" class="overflow-x-auto bg-white shadow w-fit mx-auto">
+      <div id="grid"></div>
+    </div>
+  </main>
+
+  <!-- ───────── shift dialog ───────── -->
   <dialog id="shiftDlg">
     <form id="shiftForm" method="dialog">
-      <input type="hidden" name="index">
+      <input type="hidden" name="index" />
 
       <div class="field">
         <label>Employee</label>
