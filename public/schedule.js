@@ -341,51 +341,82 @@ dlg.oncancel = () => dlg.close();
 dlg.addEventListener("close", () => form.reset());
 
 /* ==========================================================================
+   CHAT WIDGET
+   ========================================================================== */
+function initChat() {
+  const host = document.getElementById("chatBox");
+  host.innerHTML = `
+    <div class="bg-white rounded shadow flex flex-col h-72">
+      <div class="px-3 py-1 font-semibold border-b">SydPo Bot</div>
+      <div id="chatLog" class="flex-1 overflow-y-auto space-y-1 p-2 text-sm"></div>
+      <div class="border-t p-2 flex gap-2">
+        <input id="chatInput" type="text"
+               class="flex-1 border rounded px-2 py-1 text-sm"
+               placeholder="Ask me…" autocomplete="off" />
+        <button id="chatSend" class="text-blue-600 text-xl">&#x27A4;</button>
+      </div>
+    </div>`;
+
+  const log   = host.querySelector("#chatLog");
+  const input = host.querySelector("#chatInput");
+  const send  = host.querySelector("#chatSend");
+
+  const addMsg = (txt, who) => {
+    const el = document.createElement("div");
+    el.className = who === "user" ? "text-right" : "";
+    el.innerHTML = `<span class="inline-block px-2 py-1 rounded
+                     ${who === "user" ? "bg-blue-200" : "bg-gray-200"}">
+                     ${txt}</span>`;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  async function sendChat(msg) {
+    addMsg(msg, "user");
+    input.value = "";
+
+    try {
+      const res = await fetch("/api/chat", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ message: msg })
+      }).then(r => r.json());
+
+      addMsg(res.reply || "[no reply]", "bot");
+
+      // -----------------------------------------------------------
+      //  Update schedule right after a successful bot action
+      // -----------------------------------------------------------
+      if ((res.reply || "").trim().toUpperCase() === "OK") {
+        if (res.shifts) {
+          // Newer server sends fresh data directly
+          shifts  = res.shifts;
+          workers = res.workers || workers;
+        } else {
+          // Fallback: re-fetch both arrays the old way
+          [workers, shifts] = await Promise.all([
+            fetch("/api/workers").then(r => r.json()),
+            fetch("/api/shifts" ).then(r => r.json())
+          ]);
+        }
+        // refresh datalist after possible worker change
+        empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+        draw();
+      }
+    } catch (err) {
+      console.error("chat error", err);
+      addMsg("[error]", "bot");
+    }
+  }
+
+  send.onclick    = () => input.value.trim() && sendChat(input.value.trim());
+  input.onkeydown = e => { if (e.key === "Enter") send.click(); };
+  input.focus();
+}
+
+/* ==========================================================================
    NAVIGATION BUTTONS
    ========================================================================== */
 prevBtn.onclick  = () => { day.setDate(day.getDate() - 1); draw(); };
 nextBtn.onclick  = () => { day.setDate(day.getDate() + 1); draw(); };
 todayBtn.onclick = () => { day = new Date(); draw(); };
-
-/* ==========================================================================
-   CHAT WIDGET
-   ========================================================================== */
-function initChat(){
-  const host=document.getElementById("chatBox");
-  host.innerHTML=`<div class="bg-white rounded shadow flex flex-col h-72">
-    <div class="px-3 py-1 font-semibold border-b">SydPo Bot</div>
-    <div id="chatLog" class="flex-1 overflow-y-auto space-y-1 p-2 text-sm"></div>
-    <div class="border-t p-2 flex gap-2">
-      <input id="chatInput" type="text" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="Ask me…" />
-      <button id="chatSend" class="text-blue-600 text-xl">&#x27A4;</button>
-    </div>
-  </div>`;
-
-  const log=host.querySelector("#chatLog"), input=host.querySelector("#chatInput"), send=host.querySelector("#chatSend");
-
-  const addMsg=(txt,who)=>{
-    const e=document.createElement("div"); e.className=who==="user"?"text-right":"";
-    e.innerHTML=`<span class="inline-block px-2 py-1 rounded ${who==="user"?"bg-blue-200":"bg-gray-200"}">${txt}</span>`;
-    log.appendChild(e); log.scrollTop=log.scrollHeight;
-  };
-
-  async function sendChat(msg){
-    addMsg(msg,"user"); input.value="";
-    try{
-      const res=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg})}).then(r=>r.json());
-      addMsg(res.reply||"[no reply]","bot");
-      if((res.reply||"").trim().toUpperCase()==="OK"){
-        [workers,shifts]=await Promise.all([
-          fetch("/api/workers").then(r=>r.json()),
-          fetch("/api/shifts" ).then(r=>r.json())
-        ]);
-        empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join("");
-        draw();
-      }
-    }catch(err){ addMsg("[error]","bot"); }
-  }
-
-  send.onclick=()=> input.value.trim() && sendChat(input.value.trim());
-  input.onkeydown=e=>{ if(e.key==="Enter") send.click(); };
-  input.focus();
-}
