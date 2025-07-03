@@ -181,7 +181,7 @@ app.post("/api/chat", async (req, res) => {
         { role: "user",   content: user }
       ],
       tools: TOOLS,
-      tool_choice: { type: "function" }   // force at least one tool call
+      tool_choice: { type: "auto" }   // force at least one tool call
     });
 
     const msg   = out.choices[0].message;
