@@ -233,7 +233,7 @@ app.post("/api/chat", async (req, res) => {
         }
       }
 
-      return res.json({ reply: "OK" });
+      return res.json({ reply: "OK", shifts, workers });
     }
 
     // no tool call returned
