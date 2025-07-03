@@ -1,8 +1,12 @@
-// app.js — Fortis Scheduler backend (Vercel‑ready, OpenAI *tools* API)
+// app.js — Fortis Scheduler backend (force tool call + fallback handler)
 // -----------------------------------------------------------------------------
-// • Uses the new `tools` array + `tool_choice:"auto"` so OpenAI *must* emit a
-//   function_call. This resolves the 400 error "tool_choice only allowed when
-//   tools are specified".
+// Key updates vs previous canvas version:
+// 1. `tool_choice:{ type:"function" }` — **guarantees** the model returns at
+//    least one function/tool call (no more plain chat-only replies).
+// 2. Supports both `msg.tool_calls` (plural array) **and** legacy
+//    `msg.function_call` (singular) for safety.
+// 3. After every shift/PT0 mutation we call `save*()` so data lands in
+//    `/tmp/fortis-data/shifts.json`, which the front‑end fetches.
 // -----------------------------------------------------------------------------
 
 import express      from "express";
@@ -45,7 +49,8 @@ const saveShifts  = () => save(SHIFT_FILE, shifts);
 const uniqueAbilities = () => {
   const set = new Set();
   workers.forEach(w => ["Primary Ability","Secondary Ability","Tertiary Ability"].forEach(k=>w[k]&&set.add(w[k])));
-  set.add("Lunch"); return [...set].sort();
+  set.add("Lunch");
+  return [...set].sort();
 };
 
 /* -------------------------------------------------- express */
@@ -54,7 +59,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-/* ---------------- workers routes ---------------- */
+/* ---------------- workers ---------------- */
 app.get ("/api/workers",  (_,res)=>res.json(workers));
 app.get ("/api/abilities",(_,res)=>res.json(uniqueAbilities()));
 app.post("/api/workers/add", (req,res)=>{
@@ -68,89 +73,175 @@ app.post("/api/workers/update", (req,res)=>{
   workers[i]={...workers[i],...w}; saveWorkers(); res.json({success:true});
 });
 app.delete("/api/workers/:name", (req,res)=>{
-  const {name}=req.params; const len=workers.length;
+  const {name}=req.params; const before=workers.length;
   workers=workers.filter(x=>x.Name!==name);
-  if(workers.length===len) return res.status(404).json({error:"Not found"});
+  if(before===workers.length) return res.status(404).json({error:"Not found"});
   saveWorkers(); res.json({success:true});
 });
 app.post("/api/workers/pto", (req,res)=>{
   const {name,date,action}=req.body; const w=workers.find(x=>x.Name===name);
-  if(!w) return res.status(404).json({error:"Worker not found"});
+  if(!w) return res.status(404).json({error:"worker"});
   w.PTO=w.PTO||[];
   if(action==="add"   && !w.PTO.includes(date)) w.PTO.push(date);
   if(action==="remove") w.PTO=w.PTO.filter(d=>d!==date);
   saveWorkers(); res.json({success:true,PTO:w.PTO});
 });
 
-/* ---------------- shifts routes ---------------- */
-app.get ("/api/shifts",  (_,res)=>res.json(shifts));
+/* ---------------- shifts ---------------- */
+app.get ("/api/shifts", (_,res)=>res.json(shifts));
 app.post("/api/shifts", (req,res)=>{
-  const s=req.body; if(!s.id){s.id=randomUUID(); shifts.push(s);} else {
-    const i=shifts.findIndex(x=>x.id===s.id); if(i===-1) shifts.push(s); else shifts[i]=s;
+  const s=req.body; if(!s.id){ s.id=randomUUID(); shifts.push(s);} else {
+    const i=shifts.findIndex(x=>x.id===s.id);
+    if(i===-1) shifts.push(s); else shifts[i]=s;
   }
   saveShifts(); res.json({success:true,id:s.id});
 });
 app.delete("/api/shifts/:id", (req,res)=>{
-  const {id}=req.params; const len=shifts.length;
+  const {id}=req.params; const before=shifts.length;
   shifts=shifts.filter(x=>x.id!==id);
-  if(shifts.length===len) return res.status(404).json({error:"Not found"});
+  if(before===shifts.length) return res.status(404).json({error:"Not found"});
   saveShifts(); res.json({success:true});
 });
 
 /* -------------------------------------------------- OpenAI chat */
-let _openai; const ai=()=>_openai||(_openai=new OpenAI({apiKey:process.env.OPENAI_API_KEY}));
-const SYS_PROMPT="You are Fortis SchedulerBot. Convert user requests into add_shift, add_pto, or move_shift tool calls and reply with OK.";
+let _openai;
+const ai = () =>
+  _openai || (_openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
 
-const TOOLS=[
-  {type:"function",function:{name:"add_shift",description:"Add a work shift",parameters:{type:"object",properties:{name:{type:"string"},role:{type:"string"},date:{type:"string"},start:{type:"string"},end:{type:"string"},notes:{type:"string",nullable:true}},required:["name","role","date","start","end"]}}},
-  {type:"function",function:{name:"add_pto",description:"Add PTO",parameters:{type:"object",properties:{name:{type:"string"},date:{type:"string"}},required:["name","date"]}}},
-  {type:"function",function:{name:"move_shift",description:"Move a shift",parameters:{type:"object",properties:{id:{type:"string"},start:{type:"string"},end:{type:"string"}},required:["id","start","end"]}}}
+const SYS_PROMPT =
+  "You are Fortis SchedulerBot. Convert user requests into add_shift, add_pto, or move_shift tool calls and reply with OK.";
+
+const TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "add_shift",
+      description: "Add a work shift",
+      parameters: {
+        type: "object",
+        properties: {
+          name:  { type: "string" },
+          role:  { type: "string" },
+          date:  { type: "string" },
+          start: { type: "string" },
+          end:   { type: "string" },
+          notes: { type: "string", nullable: true }
+        },
+        required: ["name", "role", "date", "start", "end"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_pto",
+      description: "Add PTO",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          date: { type: "string" }
+        },
+        required: ["name", "date"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "move_shift",
+      description: "Move a shift",
+      parameters: {
+        type: "object",
+        properties: {
+          id:    { type: "string" },
+          start: { type: "string" },
+          end:   { type: "string" }
+        },
+        required: ["id", "start", "end"]
+      }
+    }
+  }
 ];
-const toMin=s=>{const d=s.replace(/[^0-9]/g,"").padStart(4,"0"); return +d.slice(0,2)*60 + +d.slice(2);};
 
-app.post("/api/chat",async(req,res)=>{
-  const user=req.body.message?.trim(); if(!user) return res.status(400).json({error:"empty"});
-  try{
-    const out=await ai().chat.completions.create({
-      model:"gpt-4o-mini",
-      messages:[{role:"system",content:SYS_PROMPT},{role:"user",content:user}],
-      tools:TOOLS,
-      tool_choice:"auto"
+const toMin = s => {
+  const d = s.replace(/[^0-9]/g, "").padStart(4, "0");
+  return +d.slice(0, 2) * 60 + +d.slice(2);
+};
+
+app.post("/api/chat", async (req, res) => {
+  const user = req.body.message?.trim();
+  if (!user) return res.status(400).json({ error: "empty" });
+
+  try {
+    const out = await ai().chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: SYS_PROMPT },
+        { role: "user",   content: user }
+      ],
+      tools: TOOLS,
+      tool_choice: { type: "function" }   // force at least one tool call
     });
 
-    const msg=out.choices[0].message;
-    if(Array.isArray(msg.tool_calls) && msg.tool_calls.length){
-      for(const call of msg.tool_calls){
-        const fn = call.function.name;
-        const args = JSON.parse(call.function.arguments||"{}");
+    const msg   = out.choices[0].message;
+    const calls = msg.tool_calls
+      ? msg.tool_calls
+      : msg.function_call
+        ? [msg]
+        : [];
 
-        if(args.date && !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(args.date)){
-          const d=new Date(); if(/tomorrow/i.test(args.date)) d.setDate(d.getDate()+1);
-          args.date=d.toISOString().slice(0,10);
+    if (calls.length) {
+      for (const call of calls) {
+        const fn   = call.function?.name || call.function_call?.name;
+        const args = JSON.parse(
+          call.function?.arguments || call.function_call?.arguments || "{}"
+        );
+
+        // convert “today”/“tomorrow” → YYYY-MM-DD
+        if (args.date && !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+          const d = new Date();
+          if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
+          args.date = d.toISOString().slice(0, 10);
         }
 
-        if(fn==="add_shift"){
-          shifts.push({id:randomUUID(),name:args.name,role:args.role,date:args.date,start:toMin(args.start),end:toMin(args.end),notes:args.notes||""});
+        if (fn === "add_shift") {
+          shifts.push({
+            id:    randomUUID(),
+            name:  args.name,
+            role:  args.role,
+            date:  args.date,
+            start: toMin(args.start),
+            end:   toMin(args.end),
+            notes: args.notes || ""
+          });
           saveShifts();
-        }
-        else if(fn==="add_pto"){
-          const w=workers.find(x=>x.Name===args.name); if(!w) return res.status(404).json({error:"worker"});
-          w.PTO=w.PTO||[]; if(!w.PTO.includes(args.date)) w.PTO.push(args.date); saveWorkers();
-        }
-        else if(fn==="move_shift"){
-          const s=shifts.find(x=>x.id===args.id); if(!s) return res.status(404).json({error:"shift"});
-          s.start=toMin(args.start); s.end=toMin(args.end); saveShifts();
-        }
-        else {
-          return res.status(400).json({error:"unknown fn"});
+        } else if (fn === "add_pto") {
+          const w = workers.find(x => x.Name === args.name);
+          if (!w) return res.status(404).json({ error: "worker" });
+          w.PTO = w.PTO || [];
+          if (!w.PTO.includes(args.date)) w.PTO.push(args.date);
+          saveWorkers();
+        } else if (fn === "move_shift") {
+          const s = shifts.find(x => x.id === args.id);
+          if (!s) return res.status(404).json({ error: "shift" });
+          s.start = toMin(args.start);
+          s.end   = toMin(args.end);
+          saveShifts();
+        } else {
+          return res.status(400).json({ error: "unknown fn" });
         }
       }
-      return res.json({reply:"OK"});
+
+      return res.json({ reply: "OK" });
     }
 
-    // no tool call
-    res.json({reply:msg.content||"[no reply]"});
-  }catch(err){console.error("/api/chat",err); res.status(500).json({error:"openai"});}
+    // no tool call returned
+    res.json({ reply: msg.content || "[no reply]" });
+  } catch (err) {
+    console.error("/api/chat", err);
+    res.status(500).json({ error: "openai" });
+  }
 });
 
 /* -------------------------------------------------- export for Vercel */
