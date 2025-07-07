@@ -226,6 +226,9 @@ app.post("/api/chat", async (req, res) => {
           if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
           args.date = d.toISOString().slice(0, 10);
         }
+        // if the model supplied an ISO date that’s clearly wrong (±30 days)
+        if (args.date && Math.abs(Date.parse(args.date) - Date.parse(todayISO())) > 2.592e9)
+            args.date = todayISO();
 
         if (fn === "add_shift") {
           shifts.push({
