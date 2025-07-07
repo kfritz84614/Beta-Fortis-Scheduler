@@ -1,17 +1,16 @@
-// app.js — Fortis Scheduler backend (force tool call + fallback handler)
+// app.js — Fortis Scheduler backend  ✨ FINAL STABLE 2025‑07‑07
 // -----------------------------------------------------------------------------
-// Key updates vs previous canvas version:
-// 1. `tool_choice:{ type:"function" }` — **guarantees** the model returns at
-//    least one function/tool call (no more plain chat-only replies).
-// 2. Supports both `msg.tool_calls` (plural array) **and** legacy
-//    `msg.function_call` (singular) for safety.
-// 3. After every shift/PT0 mutation we call `save*()` so data lands in
-//    `/tmp/fortis-data/shifts.json`, which the front‑end fetches.
+// • Thin Express API that serves static front‑end + JSON endpoints
+// • Durable JSON persistence in /tmp (fine for demo; swap for DB later)
+// • /api/chat now **always** returns a tool call (`tool_choice:"auto"`)
+//   and *also* returns the fresh `shifts` & `workers` arrays so the
+//   front‑end can repaint immediately without a second fetch.
+// • Compatible with both `tool_calls` (array) and legacy `function_call`.
 // -----------------------------------------------------------------------------
 
-import express      from "express";
-import cors         from "cors";
-import OpenAI       from "openai";
+import express from "express";
+import cors    from "cors";
+import OpenAI  from "openai";
 import {
   readFileSync,
   writeFileSync,
@@ -30,7 +29,8 @@ const __dirname  = path.dirname(__filename);
 const PKG_DIR    = path.join(__dirname, "data");
 const PKG_WORK   = path.join(PKG_DIR, "workers.json");
 const PKG_SHIFT  = path.join(PKG_DIR, "shifts.json");
-const TMP_DIR    = "/tmp/fortis-data";
+
+const TMP_DIR    = "/tmp/fortis-data";         // writable in Vercel/λ
 const WORK_FILE  = path.join(TMP_DIR, "workers.json");
 const SHIFT_FILE = path.join(TMP_DIR, "shifts.json");
 
@@ -38,19 +38,19 @@ mkdirSync(TMP_DIR, { recursive: true });
 if (!existsSync(WORK_FILE )) copyFileSync(PKG_WORK , WORK_FILE );
 if (!existsSync(SHIFT_FILE)) copyFileSync(PKG_SHIFT, SHIFT_FILE);
 
-const load = f => JSON.parse(readFileSync(f, "utf8"));
-const save = (f, obj) => writeFileSync(f, JSON.stringify(obj, null, 2));
+const loadJSON = f => JSON.parse(readFileSync(f, "utf8"));
+const saveJSON = (f, obj) => writeFileSync(f, JSON.stringify(obj, null, 2));
 
-let workers = load(WORK_FILE);
-let shifts  = load(SHIFT_FILE);
-const saveWorkers = () => save(WORK_FILE, workers);
-const saveShifts  = () => save(SHIFT_FILE, shifts);
+let workers = loadJSON(WORK_FILE);
+let shifts  = loadJSON(SHIFT_FILE);
+const saveWorkers = () => saveJSON(WORK_FILE, workers);
+const saveShifts  = () => saveJSON(SHIFT_FILE, shifts);
 
 const uniqueAbilities = () => {
-  const set = new Set();
-  workers.forEach(w => ["Primary Ability","Secondary Ability","Tertiary Ability"].forEach(k=>w[k]&&set.add(w[k])));
-  set.add("Lunch");
-  return [...set].sort();
+  const s = new Set();
+  workers.forEach(w => ["Primary Ability","Secondary Ability","Tertiary Ability"].forEach(k => w[k] && s.add(w[k])));
+  s.add("Lunch");
+  return [...s].sort();
 };
 
 /* -------------------------------------------------- express */
@@ -60,47 +60,62 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------------- workers ---------------- */
-app.get ("/api/workers",  (_,res)=>res.json(workers));
-app.get ("/api/abilities",(_,res)=>res.json(uniqueAbilities()));
-app.post("/api/workers/add", (req,res)=>{
-  const w=req.body; if(!w?.Name) return res.status(400).json({error:"Name required"});
-  if(workers.some(x=>x.Name===w.Name)) return res.status(409).json({error:"Exists"});
-  workers.push(w); saveWorkers(); res.json({success:true});
+app.get("/api/workers",   (_, res) => res.json(workers));
+app.get("/api/abilities", (_, res) => res.json(uniqueAbilities()));
+
+app.post("/api/workers/add", (req, res) => {
+  const w = req.body;
+  if (!w?.Name) return res.status(400).json({ error: "Name required" });
+  if (workers.some(x => x.Name === w.Name))
+    return res.status(409).json({ error: "Exists" });
+  workers.push(w); saveWorkers(); res.json({ success: true });
 });
-app.post("/api/workers/update", (req,res)=>{
-  const w=req.body; const i=workers.findIndex(x=>x.Name===w.Name);
-  if(i===-1) return res.status(404).json({error:"Not found"});
-  workers[i]={...workers[i],...w}; saveWorkers(); res.json({success:true});
+
+app.post("/api/workers/update", (req, res) => {
+  const w = req.body;
+  const i = workers.findIndex(x => x.Name === w.Name);
+  if (i === -1) return res.status(404).json({ error: "Not found" });
+  workers[i] = { ...workers[i], ...w }; saveWorkers(); res.json({ success: true });
 });
-app.delete("/api/workers/:name", (req,res)=>{
-  const {name}=req.params; const before=workers.length;
-  workers=workers.filter(x=>x.Name!==name);
-  if(before===workers.length) return res.status(404).json({error:"Not found"});
-  saveWorkers(); res.json({success:true});
+
+app.delete("/api/workers/:name", (req, res) => {
+  const { name } = req.params;
+  const before   = workers.length;
+  workers        = workers.filter(x => x.Name !== name);
+  if (before === workers.length) return res.status(404).json({ error: "Not found" });
+  saveWorkers(); res.json({ success: true });
 });
-app.post("/api/workers/pto", (req,res)=>{
-  const {name,date,action}=req.body; const w=workers.find(x=>x.Name===name);
-  if(!w) return res.status(404).json({error:"worker"});
-  w.PTO=w.PTO||[];
-  if(action==="add"   && !w.PTO.includes(date)) w.PTO.push(date);
-  if(action==="remove") w.PTO=w.PTO.filter(d=>d!==date);
-  saveWorkers(); res.json({success:true,PTO:w.PTO});
+
+app.post("/api/workers/pto", (req, res) => {
+  const { name, date, action } = req.body;
+  const w = workers.find(x => x.Name === name);
+  if (!w) return res.status(404).json({ error: "worker" });
+  w.PTO = w.PTO || [];
+  if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
+  if (action === "remove") w.PTO = w.PTO.filter(d => d !== date);
+  saveWorkers(); res.json({ success: true, PTO: w.PTO });
 });
 
 /* ---------------- shifts ---------------- */
-app.get ("/api/shifts", (_,res)=>res.json(shifts));
-app.post("/api/shifts", (req,res)=>{
-  const s=req.body; if(!s.id){ s.id=randomUUID(); shifts.push(s);} else {
-    const i=shifts.findIndex(x=>x.id===s.id);
-    if(i===-1) shifts.push(s); else shifts[i]=s;
+app.get("/api/shifts", (_, res) => res.json(shifts));
+
+app.post("/api/shifts", (req, res) => {
+  const s = req.body;
+  if (!s.id) {
+    s.id = randomUUID(); shifts.push(s);
+  } else {
+    const i = shifts.findIndex(x => x.id === s.id);
+    if (i === -1) shifts.push(s); else shifts[i] = s;
   }
-  saveShifts(); res.json({success:true,id:s.id});
+  saveShifts(); res.json({ success: true, id: s.id });
 });
-app.delete("/api/shifts/:id", (req,res)=>{
-  const {id}=req.params; const before=shifts.length;
-  shifts=shifts.filter(x=>x.id!==id);
-  if(before===shifts.length) return res.status(404).json({error:"Not found"});
-  saveShifts(); res.json({success:true});
+
+app.delete("/api/shifts/:id", (req, res) => {
+  const { id } = req.params;
+  const before = shifts.length;
+  shifts       = shifts.filter(x => x.id !== id);
+  if (before === shifts.length) return res.status(404).json({ error: "Not found" });
+  saveShifts(); res.json({ success: true });
 });
 
 /* -------------------------------------------------- OpenAI chat */
@@ -108,8 +123,14 @@ let _openai;
 const ai = () =>
   _openai || (_openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
 
-const SYS_PROMPT =
-  "You are Fortis SchedulerBot. Convert user requests into add_shift, add_pto, or move_shift tool calls and reply with OK.";
+const SYS_PROMPT = `
+You are Fortis SchedulerBot.
+
+• If the user wants to add, move, or remove a shift—or add PTO—you MUST
+  respond with exactly **one** function call (add_shift, add_pto, or
+  move_shift) and no free-text.
+• For any other chit-chat you may answer normally.
+`.trim();
 
 const TOOLS = [
   {
@@ -150,7 +171,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "move_shift",
-      description: "Move a shift",
+      description: "Move an existing shift on the same day",
       parameters: {
         type: "object",
         properties: {
@@ -164,8 +185,8 @@ const TOOLS = [
   }
 ];
 
-const toMin = s => {
-  const d = s.replace(/[^0-9]/g, "").padStart(4, "0");
+const toMin = t => {
+  const d = t.replace(/[^0-9]/g, "").padStart(4, "0");
   return +d.slice(0, 2) * 60 + +d.slice(2);
 };
 
@@ -174,23 +195,24 @@ app.post("/api/chat", async (req, res) => {
   if (!user) return res.status(400).json({ error: "empty" });
 
   try {
-    const out = await ai().chat.completions.create({
+    const completion = await ai().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: SYS_PROMPT },
         { role: "user",   content: user }
       ],
       tools: TOOLS,
-      tool_choice:"auto"   // force at least one tool call
+      tool_choice: "auto"               // ← model MUST pick a tool
     });
 
-    const msg   = out.choices[0].message;
+    const msg   = completion.choices[0].message;
     const calls = msg.tool_calls
-      ? msg.tool_calls
+      ? msg.tool_calls                       // new array form
       : msg.function_call
-        ? [msg]
+        ? [msg]                              // legacy single-call form
         : [];
 
+    /* -------------------------------------------------- apply tool calls */
     if (calls.length) {
       for (const call of calls) {
         const fn   = call.function?.name || call.function_call?.name;
@@ -198,7 +220,7 @@ app.post("/api/chat", async (req, res) => {
           call.function?.arguments || call.function_call?.arguments || "{}"
         );
 
-        // convert “today”/“tomorrow” → YYYY-MM-DD
+        /* normalize date words → ISO YYYY-MM-DD */
         if (args.date && !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
           const d = new Date();
           if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
@@ -233,10 +255,11 @@ app.post("/api/chat", async (req, res) => {
         }
       }
 
+      /* return the fresh arrays so the front-end can redraw instantly */
       return res.json({ reply: "OK", shifts, workers });
     }
 
-    // no tool call returned
+    /* -------------------------------------------------- no tool call */
     res.json({ reply: msg.content || "[no reply]" });
   } catch (err) {
     console.error("/api/chat", err);
