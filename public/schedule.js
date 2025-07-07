@@ -1,9 +1,13 @@
-//  public/schedule.js — 2025‑07‑01 ✨ **final, fully‑complete build**
-//  Replaces earlier truncated versions that threw syntax errors.
-// ---------------------------------------------------------------------------
+// public/schedule.js – 2025‑07‑07  ✅  (complete client file)
+// -----------------------------------------------------------------------------
+// • Draws the day grid, including PTO greying.
+// • Lets users drag‑create, move and resize shifts via the dialog.
+// • Chat widget posts to /api/chat and, on reply "OK", uses either the
+//   returned arrays (res.shifts / res.workers) or falls back to re‑fetching.
+// -----------------------------------------------------------------------------
 
-/* ---------- CONFIG ---------- */
-const STEP = 15;
+/***** CONFIG *****/
+const STEP   = 15;                  // drag‑create snap (minutes)
 const COLORS = {
   Reservations:     "#16a34a",
   Dispatch:         "#b91c1c",
@@ -16,71 +20,48 @@ const COLORS = {
   Lunch:            "#8b5a2b"
 };
 
-/* ---------- HELPERS ---------- */
-const hh   = h => `${String(h).padStart(2, "0")}:00`;
-const fmt  = m => `${String((m/60)|0).padStart(2, "0")}:${String(m%60).padStart(2, "0")}`;
-const toMin= t => {
-  if (!t.includes(":" ) && t.length === 4) t = t.slice(0,2)+":"+t.slice(2);
-  const [h,m] = t.split(":" ).map(Number);
-  return h*60 + m;
-};
-const iso  = d => d.toISOString().slice(0,10);
+/***** HELPERS *****/
+const hh    = h => `${String(h).padStart(2, "0")}:00`;
+const fmt   = m => `${String((m/60)|0).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const toMin = t => { if(!t) return 0; const d=t.replace(/[^0-9]/g,"").padStart(4,"0"); return +d.slice(0,2)*60+ +d.slice(2); };
+const iso   = d => d.toISOString().slice(0,10);
 
-// PTO checker
-const hasPTO = (name, dateIso) => {
-  const w = workers.find(w => w.Name === name);
-  return w?.PTO?.includes(dateIso);
-};
+const hasPTO = (name,dateISO) => { const w=workers.find(w=>w.Name===name); return w?.PTO?.includes(dateISO); };
 
-/* ---------- STATE ---------- */
+/***** STATE *****/
 let workers=[], abilities=[], shifts=[];
 let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
 
-/* ---------- DOM REFS ---------- */
+/***** DOM *****/
 const grid     = document.getElementById("grid");
 const wrap     = document.getElementById("wrap");
 const dateH    = document.getElementById("date");
-const empDl    = document.getElementById("workerList");
 const prevBtn  = document.getElementById("prev");
 const nextBtn  = document.getElementById("next");
 const todayBtn = document.getElementById("todayBtn");
+const empDl    = document.getElementById("workerList");
 
-/* ---------- INIT DATA ---------- */
-(async () => {
-  [workers, abilities, shifts] = await Promise.all([
+/***** INIT *****/
+(async()=>{
+  [workers,abilities,shifts]=await Promise.all([
     fetch("/api/workers" ).then(r=>r.json()),
     fetch("/api/abilities").then(r=>r.json()),
     fetch("/api/shifts"   ).then(r=>r.json())
   ]);
-  empDl.innerHTML = workers.map(w=>`<option value="${w.Name}">`).join("");
+  empDl.innerHTML=workers.map(w=>`<option value="${w.Name}">`).join("");
   draw();
   initChat();
 })();
 
-/* ---------- PERSIST ---------- */
-const saveShift   = async s => {
-  const { id } = await fetch("/api/shifts", {
-    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(s)
-  }).then(r=>r.json());
-  if (!s.id) s.id=id;
-};
-const deleteShift = id => fetch(`/api/shifts/${id}`, { method:"DELETE" });
+/***** PERSIST *****/
+const saveShift   = s=>fetch("/api/shifts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(s)}).then(r=>r.json()).then(({id})=>{ if(!s.id) s.id=id; });
+const deleteShift = id=>fetch(`/api/shifts/${id}`,{method:"DELETE"});
 
-/* ==========================================================================
-   GRID RENDERING
-   ========================================================================== */
-function firstStart(name){
-  const f=shifts.filter(s=>s.name===name && s.date===iso(day)).sort((a,b)=>a.start-b.start)[0];
-  return f?f.start:1441;
-}
-
+/***** GRID RENDER *****/
+function firstStart(n){ const f=shifts.filter(s=>s.name===n&&s.date===iso(day)).sort((a,b)=>a.start-b.start)[0]; return f?f.start:1441; }
 function draw(){
-  const sorted=[...workers].sort((a,b)=>{
-    const sa=firstStart(a.Name), sb=firstStart(b.Name);
-    return sa!==sb?sa-sb:a.Name.localeCompare(b.Name);
-  });
+  const sorted=[...workers].sort((a,b)=>{ const sa=firstStart(a.Name), sb=firstStart(b.Name); return sa!==sb?sa-sb:a.Name.localeCompare(b.Name); });
   const rowOf=Object.fromEntries(sorted.map((w,i)=>[w.Name,i]));
-
   grid.innerHTML="";
   grid.style.gridTemplateRows=`30px repeat(${sorted.length},30px)`;
 
@@ -88,53 +69,30 @@ function draw(){
   for(let h=0;h<24;h++) grid.appendChild(lbl(hh(h),1,h+2));
 
   sorted.forEach((w,r)=>{
-    const pto=hasPTO(w.Name, iso(day));
-
-    const label=lbl(w.Name,r+2,1);
-    if(pto) label.style.background="#e5e7eb";
-    grid.appendChild(label);
-
-    for(let h=0;h<24;h++){
-      const c=cell(r+2,h+2,{row:r,hour:h});
-      if(pto) c.style.background="#f9fafb";
-      grid.appendChild(c);
-    }
-
-    const band=document.createElement("div");
-    band.className="band"; band.style.gridRow=r+2;
-    if(pto) band.style.background="rgba(0,0,0,.05)";
-    grid.appendChild(band);
+    const pto=hasPTO(w.Name,iso(day));
+    const label=lbl(w.Name,r+2,1); if(pto) label.style.background="#e5e7eb"; grid.appendChild(label);
+    for(let h=0;h<24;h++){ const c=cell(r+2,h+2,{row:r,hour:h}); if(pto) c.style.background="#f9fafb"; grid.appendChild(c);}   
+    const band=document.createElement("div"); band.className="band"; band.style.gridRow=r+2; if(pto) band.style.background="rgba(0,0,0,.05)"; grid.appendChild(band);
   });
 
   shifts.filter(s=>s.date===iso(day)).forEach(s=>placeBlock(s,shifts.indexOf(s),rowOf[s.name]));
-
-  dateH.textContent=day.toDateString();
-  location.hash=iso(day);
+  dateH.textContent=day.toDateString(); location.hash=iso(day);
 }
 
-const lbl=(t,r=1,c=1)=>{
-  const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d;
-};
-const cell=(r,c,ds={})=>{
-  const d=document.createElement("div"); d.className="cell"; d.style.gridRow=r; d.style.gridColumn=c; Object.assign(d.dataset,ds); return d;
-};
+const lbl=(t,r=1,c=1)=>{ const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d; };
+const cell=(r,c,ds={})=>{ const d=document.createElement("div"); d.className="cell"; d.style.gridRow=r; d.style.gridColumn=c; Object.assign(d.dataset,ds); return d; };
 
-/* ---------- BLOCKS ---------- */
+/***** BLOCKS *****/
 function placeBlock(s,idx,row){
   const band=grid.querySelectorAll(".band")[row]; if(!band) return;
   const el=document.createElement("div"); el.className="block";
-  el.style.left=`${s.start/1440*100}%`;
-  el.style.width=`${(s.end-s.start)/1440*100}%`;
+  el.style.left = `${s.start/1440*100}%`;
+  el.style.width= `${(s.end-s.start)/1440*100}%`;
   el.style.background=COLORS[s.role]||"#2563eb";
   el.textContent=`${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
   el.ondblclick=()=>openDlg("edit",idx);
 
-  ["l","r"].forEach(side=>{
-    const h=document.createElement("span");
-    h.style.cssText="position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;"+(side==="l"?"left:0;":"right:0;");
-    h.onmousedown=e=>startResize(e,idx,side);
-    el.appendChild(h);
-  });
+  ["l","r"].forEach(side=>{ const h=document.createElement("span"); h.style.cssText=`position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;${side==="l"?"left:0;":"right:0;"}`; h.onmousedown=e=>startResize(e,idx,side); el.appendChild(h); });
   el.onmousedown=e=>{ if(e.target.tagName==="SPAN") return; startMove(e,idx,row,el); };
   band.appendChild(el);
 }
@@ -361,6 +319,7 @@ function initChat() {
   const input = host.querySelector("#chatInput");
   const send  = host.querySelector("#chatSend");
 
+  /* ---- tiny helper to push bubbles ---- */
   const addMsg = (txt, who) => {
     const el = document.createElement("div");
     el.className = who === "user" ? "text-right" : "";
@@ -371,6 +330,7 @@ function initChat() {
     log.scrollTop = log.scrollHeight;
   };
 
+  /* ---- send message to /api/chat ---- */
   async function sendChat(msg) {
     addMsg(msg, "user");
     input.value = "";
@@ -384,23 +344,23 @@ function initChat() {
 
       addMsg(res.reply || "[no reply]", "bot");
 
-      // -----------------------------------------------------------
-      //  Update schedule right after a successful bot action
-      // -----------------------------------------------------------
+      /* ---------------------------------------------
+         If the server replied OK, refresh the grid.
+         Prefer arrays returned in-line; otherwise
+         fall back to re-fetching both endpoints.
+      ----------------------------------------------*/
       if ((res.reply || "").trim().toUpperCase() === "OK") {
         if (res.shifts) {
-          // Newer server sends fresh data directly
           shifts  = res.shifts;
           workers = res.workers || workers;
         } else {
-          // Fallback: re-fetch both arrays the old way
           [workers, shifts] = await Promise.all([
             fetch("/api/workers").then(r => r.json()),
             fetch("/api/shifts" ).then(r => r.json())
           ]);
         }
-        // refresh datalist after possible worker change
-        empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+        empDl.innerHTML =
+          workers.map(w => `<option value="${w.Name}">`).join("");
         draw();
       }
     } catch (err) {
