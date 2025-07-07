@@ -206,58 +206,57 @@ app.post("/api/chat", async (req, res) => {
     });
 
     const msg   = completion.choices[0].message;
-   const calls = msg.tool_calls
-  ? msg.tool_calls
-  : msg.function_call
-    ? [msg]          // legacy single-call form
-    : [];
+    const calls = msg.tool_calls
+      ? msg.tool_calls                       // new array form
+      : msg.function_call
+        ? [msg]                              // legacy single-call form
+        : [];
 
-if (calls.length) {
-  for (const call of calls) {
-    const fn   = call.function?.name || call.function_call?.name;
-    const args = JSON.parse(
-      call.function?.arguments || call.function_call?.arguments || "{}"
-    );
+    /* -------------------------------------------------- apply tool calls */
+    if (calls.length) {
+      for (const call of calls) {
+        const fn   = call.function?.name || call.function_call?.name;
+        const args = JSON.parse(
+          call.function?.arguments || call.function_call?.arguments || "{}"
+        );
 
-    /* ----------- DATE NORMALISATION ---------------------------------- */
+        /* normalize date words → ISO YYYY-MM-DD */
+        if (args.date && !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
+          const d = new Date();
+          if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
+          args.date = d.toISOString().slice(0, 10);
+        }
+        if (fn === "add_shift") {
+          shifts.push({
+            id:    randomUUID(),
+            name:  args.name,
+            role:  args.role,
+            date:  args.date,
+            start: toMin(args.start),
+            end:   toMin(args.end),
+            notes: args.notes || ""
+          });
+          saveShifts();
+        } else if (fn === "add_pto") {
+          const w = workers.find(x => x.Name === args.name);
+          if (!w) return res.status(404).json({ error: "worker" });
+          w.PTO = w.PTO || [];
+          if (!w.PTO.includes(args.date)) w.PTO.push(args.date);
+          saveWorkers();
+        } else if (fn === "move_shift") {
+          const s = shifts.find(x => x.id === args.id);
+          if (!s) return res.status(404).json({ error: "shift" });
+          s.start = toMin(args.start);
+          s.end   = toMin(args.end);
+          saveShifts();
+        } else {
+          return res.status(400).json({ error: "unknown fn" });
+        }
+      }
 
-    // helper: today in *local* ISO -- YYYY-MM-DD
-    const todayISO = () => {
-      const d = new Date();
-      d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-      return d.toISOString().slice(0, 10);
-    };
-
-    // convert “today / tomorrow” → ISO
-    if (args.date && !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
-      const d = new Date();
-      if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
-      args.date = todayISO();
+      /* return the fresh arrays so the front-end can redraw instantly */
+      return res.json({ reply: "OK", shifts, workers });
     }
-
-    // if GPT already supplied an ISO date but it’s > 30 days away,
-    // assume it’s a hallucination and snap back to today
-    if (
-      args.date &&
-      Math.abs(Date.parse(args.date) - Date.parse(todayISO())) > 2.592e9 /* 30 days */
-    ) {
-      args.date = todayISO();
-    }
-
-    /* ----------- TOOL HANDLERS --------------------------------------- */
-
-    if (fn === "add_shift") {
-      shifts.push({
-        id:    randomUUID(),
-        name:  args.name,
-        role:  args.role,
-        date:  args.date,
-        start: toMin(args.start),
-        end:   toMin(args.end),
-        notes: args.notes || ""
-      });
-      saveShifts();
-    } else if (fn === "add_pto") {
 
     /* -------------------------------------------------- no tool call */
     res.json({ reply: msg.content || "[no reply]" });
