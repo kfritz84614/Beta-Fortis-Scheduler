@@ -4,6 +4,7 @@
 // • Support for full day/week schedule generation
 // • Coverage analysis and validation display
 // • Smart scheduling suggestions
+// • Robust error handling and data transformation
 // -----------------------------------------------------------------------------
 
 /***** CONFIG *****/
@@ -122,26 +123,138 @@ const nextBtn  = document.getElementById("next");
 const todayBtn = document.getElementById("todayBtn");
 const empDl    = document.getElementById("workerList");
 
-/***** INIT *****/
+/***** INIT WITH ROBUST ERROR HANDLING *****/
 (async()=>{
+  console.log("🚀 Initializing Fortis Scheduler...");
+  
   try {
-    [workers, abilities] = await Promise.all([
-      fetch("/api/workers").then(r => r.json()),
-      fetch("/api/abilities").then(r => r.json())
-    ]);
+    // Test basic connectivity first
+    console.log("1️⃣ Testing API health...");
+    const healthResponse = await fetch("/api/health");
+    if (!healthResponse.ok) {
+      throw new Error(`Health check failed: ${healthResponse.status} ${healthResponse.statusText}`);
+    }
+    const health = await healthResponse.json();
+    console.log("✅ API Health:", health.status);
+    
+    // Load data with individual error handling
+    console.log("2️⃣ Loading workers...");
+    let workersResponse;
+    try {
+      workersResponse = await fetch("/api/workers");
+      if (!workersResponse.ok) {
+        throw new Error(`Workers API failed: ${workersResponse.status} ${workersResponse.statusText}`);
+      }
+      workers = await workersResponse.json();
+      
+      // Handle wrapped response format
+      if (!Array.isArray(workers) && workers.workers) {
+        workers = workers.workers;
+      }
+      if (!Array.isArray(workers)) {
+        throw new Error("Workers data is not an array");
+      }
+      console.log(`✅ Loaded ${workers.length} workers`);
+    } catch (error) {
+      console.error("❌ Workers loading failed:", error);
+      workers = []; // Fallback to empty array
+      alert(`Workers loading failed: ${error.message}. Using empty worker list.`);
+    }
 
-    // ✅ FIXED: Transform shifts from Google Sheets format to frontend format
-    const rawShifts = await fetch("/api/shifts").then(r => r.json());
-    shifts = rawShifts.map((shift, index) => sheetsToFrontend(shift, index));
+    console.log("3️⃣ Loading abilities...");
+    try {
+      const abilitiesResponse = await fetch("/api/abilities");
+      if (!abilitiesResponse.ok) {
+        throw new Error(`Abilities API failed: ${abilitiesResponse.status} ${abilitiesResponse.statusText}`);
+      }
+      abilities = await abilitiesResponse.json();
+      
+      if (!Array.isArray(abilities)) {
+        throw new Error("Abilities data is not an array");
+      }
+      console.log(`✅ Loaded ${abilities.length} abilities`);
+    } catch (error) {
+      console.error("❌ Abilities loading failed:", error);
+      abilities = ["Reservations", "Dispatch", "Lunch"]; // Fallback
+      alert(`Abilities loading failed: ${error.message}. Using default abilities.`);
+    }
+
+    console.log("4️⃣ Loading shifts...");
+    try {
+      const shiftsResponse = await fetch("/api/shifts");
+      if (!shiftsResponse.ok) {
+        throw new Error(`Shifts API failed: ${shiftsResponse.status} ${shiftsResponse.statusText}`);
+      }
+      const rawShifts = await shiftsResponse.json();
+      
+      if (!Array.isArray(rawShifts)) {
+        throw new Error("Shifts data is not an array");
+      }
+      
+      // Transform shifts with error handling
+      shifts = [];
+      rawShifts.forEach((shift, index) => {
+        try {
+          const transformed = sheetsToFrontend(shift, index);
+          shifts.push(transformed);
+        } catch (transformError) {
+          console.warn(`⚠️ Failed to transform shift ${index}:`, transformError, shift);
+        }
+      });
+      
+      console.log(`✅ Loaded and transformed ${shifts.length} shifts`);
+    } catch (error) {
+      console.error("❌ Shifts loading failed:", error);
+      shifts = []; // Fallback to empty array
+      alert(`Shifts loading failed: ${error.message}. Using empty schedule.`);
+    }
+
+    console.log("5️⃣ Setting up UI...");
     
-    console.log(`✅ Loaded ${workers.length} workers, ${shifts.length} shifts`);
+    // Populate worker dropdown
+    if (empDl && workers.length > 0) {
+      empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+      console.log("✅ Worker dropdown populated");
+    } else {
+      console.warn("⚠️ Worker dropdown not populated");
+    }
     
-    empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
-    draw();
-    initChat();
+    // Draw the schedule
+    if (typeof draw === 'function') {
+      draw();
+      console.log("✅ Schedule drawn");
+    } else {
+      console.error("❌ Draw function not available");
+    }
+    
+    // Initialize chat
+    console.log("6️⃣ Initializing chat...");
+    if (typeof initChat === 'function') {
+      try {
+        initChat();
+        console.log("✅ Chat initialized");
+      } catch (chatError) {
+        console.error("❌ Chat initialization failed:", chatError);
+        alert(`Chat initialization failed: ${chatError.message}. Manual scheduling still available.`);
+      }
+    } else {
+      console.error("❌ initChat function not available");
+    }
+    
+    console.log("🎉 Fortis Scheduler initialization complete!");
+    
   } catch (error) {
-    console.error("❌ Failed to load initial data:", error);
-    alert("Failed to load scheduling data. Please refresh and try again.");
+    console.error("💥 Critical initialization error:", error);
+    alert(`Critical error during initialization: ${error.message}\n\nPlease check:\n1. Google Sheets permissions\n2. Environment variables\n3. Browser console for details`);
+    
+    // Try to at least show the UI
+    if (typeof draw === 'function') {
+      try {
+        draw();
+      } catch (drawError) {
+        console.error("Even basic UI drawing failed:", drawError);
+      }
+    }
   }
 })();
 
@@ -500,6 +613,11 @@ dlg.addEventListener("close", () => form.reset());
    ========================================================================== */
 function initChat() {
   const host = document.getElementById("chatBox");
+  if (!host) {
+    console.error("❌ chatBox element not found");
+    return;
+  }
+  
   host.innerHTML = `
     <div class="bg-white rounded shadow flex flex-col h-96 border">
       <div class="px-3 py-2 font-semibold border-b bg-blue-50 flex justify-between items-center">
@@ -536,7 +654,7 @@ function initChat() {
   addMsg("👋 I'm your advanced scheduling assistant! I can build complete schedules, analyze coverage, and handle complex scheduling rules. Try asking me to build a schedule!", "bot");
 
   /* ---- Helper to add chat bubbles ---- */
-  const addMsg = (txt, who) => {
+  function addMsg(txt, who) {
     const el = document.createElement("div");
     el.className = who === "user" ? "text-right" : "";
     
@@ -547,7 +665,7 @@ function initChat() {
                      ${txt.replace(/\n/g, '<br>')}</div>`;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
-  };
+  }
 
   /* ---- Quick action buttons ---- */
   host.addEventListener('click', (e) => {
@@ -649,7 +767,56 @@ function initChat() {
   send.onclick    = () => input.value.trim() && sendChat(input.value.trim());
   input.onkeydown = e => { if (e.key === "Enter") send.click(); };
   input.focus();
+  
+  console.log("✅ Chat initialized successfully!");
 }
+
+// Add global error handler
+window.addEventListener('error', (event) => {
+  console.error('🚨 Global JavaScript Error:', {
+    message: event.message,
+    filename: event.filename,
+    lineno: event.lineno,
+    colno: event.colno,
+    error: event.error
+  });
+});
+
+// Add unhandled promise rejection handler
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('🚨 Unhandled Promise Rejection:', event.reason);
+  event.preventDefault(); // Prevent default browser error handling
+});
+
+// Fallback initialization function
+window.manualInit = async function() {
+  console.log("🔧 Running manual initialization...");
+  
+  // Set fallback data if needed
+  if (typeof workers === 'undefined') workers = [];
+  if (typeof abilities === 'undefined') abilities = ["Reservations", "Dispatch", "Lunch"];
+  if (typeof shifts === 'undefined') shifts = [];
+  
+  // Try to initialize chat manually
+  if (typeof initChat === 'function') {
+    try {
+      initChat();
+      console.log("✅ Manual chat initialization successful");
+    } catch (error) {
+      console.error("❌ Manual chat initialization failed:", error);
+    }
+  }
+  
+  // Try to draw the grid
+  if (typeof draw === 'function') {
+    try {
+      draw();
+      console.log("✅ Manual draw successful");
+    } catch (error) {
+      console.error("❌ Manual draw failed:", error);
+    }
+  }
+};
 
 /* ==========================================================================
    NAVIGATION BUTTONS
