@@ -83,33 +83,33 @@
         </div>
       </form>
     </dialog>
-    <!-- PTO calendar dialog -->
-<dialog id="ptoDlg" class="max-w-md rounded shadow">
-  <div class="p-6 space-y-4">
-    <h2 class="text-xl font-bold">
-      PTO • <span id="ptoName"></span>
-    </h2>
 
-    <div id="ptoCalendar"></div>
+    <!-- ✅ IMPROVED: PTO calendar dialog with clearer button behavior -->
+    <dialog id="ptoDlg" class="max-w-md rounded shadow">
+      <div class="p-6 space-y-4">
+        <h2 class="text-xl font-bold">
+          PTO • <span id="ptoName"></span>
+        </h2>
 
-    <p class="text-sm">
-      <span class="inline-block w-3 h-3 bg-amber-400 mr-1 rounded-sm"></span>
-      date has PTO — click to add/remove
-    </p>
+        <div id="ptoCalendar"></div>
 
-    <div class="flex justify-end gap-3 pt-2">
-      <!-- NEW -->
-      <button id="ptoSave"
-              class="bg-blue-600 text-white px-4 py-1 rounded">
-        Save
-      </button>
-      <button id="ptoClose"
-              class="bg-gray-400 text-white px-4 py-1 rounded">
-        Close
-      </button>
-    </div>
-  </div>
-</dialog>
+        <p class="text-sm text-gray-600">
+          <span class="inline-block w-3 h-3 bg-amber-400 mr-1 rounded-sm"></span>
+          Click dates to add/remove PTO days
+        </p>
+
+        <div class="flex justify-end gap-3 pt-2">
+          <button id="ptoSave"
+                  class="bg-green-600 text-white px-4 py-1 rounded shadow hover:bg-green-700">
+            ✓ Save Changes
+          </button>
+          <button id="ptoClose"
+                  class="bg-gray-400 text-white px-4 py-1 rounded hover:bg-gray-500">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </dialog>
   </main>
 
   <!-- Admin logic -->
