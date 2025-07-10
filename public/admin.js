@@ -9,18 +9,20 @@ const dlg      = document.getElementById('dlg');
 const frm      = document.getElementById('frm');
 const ptoDlg   = document.getElementById('ptoDlg');
 const ptoName  = document.getElementById('ptoName');
+const ptoSave  = document.getElementById('ptoSave');   // ← ADDED: Get save button ref
 const ptoClose = document.getElementById('ptoClose');
 let   ptoCal   = null;                 // flatpickr instance
+let   currentWorker = null;            // ← ADDED: Track current worker being edited
 
 /* -------------- initial load ----------------------------------- */
 (async () => {
   [workers, abilities] = await Promise.all([
-  fetch('/api/workers' ).then(r => r.json()),
-  fetch('/api/abilities').then(r => r.json())
-]);
+    fetch('/api/workers' ).then(r => r.json()),
+    fetch('/api/abilities').then(r => r.json())
+  ]);
 
-/* ↓ If backend ever returns {workers:[…]}, unwrap it */
-if (!Array.isArray(workers) && workers.workers) workers = workers.workers;
+  /* ↓ If backend ever returns {workers:[…]}, unwrap it */
+  if (!Array.isArray(workers) && workers.workers) workers = workers.workers;
   if (!abilities.includes('Lunch')) abilities.push('Lunch');
   renderTable();
 })();
@@ -92,16 +94,16 @@ frm.onsubmit = async e => {
   if (mode === 'edit') workers[frm.dataset.idx] = data;
   else                 workers.push(data);
 
-/* choose endpoint: new → /add   |  edit → /update */
-const url = mode === 'new'
-          ? '/api/workers/add'
-          : '/api/workers/update';
+  /* choose endpoint: new → /add   |  edit → /update */
+  const url = mode === 'new'
+            ? '/api/workers/add'
+            : '/api/workers/update';
 
-await fetch(url, {
-  method : 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body   : JSON.stringify(data)
-});
+  await fetch(url, {
+    method : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body   : JSON.stringify(data)
+  });
 
   dlg.close(); renderTable();
 };
@@ -111,8 +113,8 @@ document.getElementById('close-btn').onclick = () => dlg.close();
 async function delWorker (idx) {
   if (!confirm(`Delete ${workers[idx].Name}?`)) return;
   await fetch(`/api/workers/${encodeURIComponent(workers[idx].Name)}`, {
-  method: 'DELETE'
-});
+    method: 'DELETE'
+  });
 
   workers.splice(idx,1);
   renderTable();
@@ -121,6 +123,7 @@ async function delWorker (idx) {
 /* -------------- PTO dialog ------------------------------------- */
 function openPtoDlg (idx) {
   const w = workers[idx];
+  currentWorker = w;  // ← ADDED: Store reference to current worker
   ptoName.textContent = w.Name;
   if (ptoCal) ptoCal.destroy();
 
@@ -144,17 +147,70 @@ function openPtoDlg (idx) {
     }
   });
 
-  ptoClose.onclick = async () => {
-    await fetch('/api/workers/pto', {
-      method : 'POST',
-      headers: {'Content-Type':'application/json'},
-      body   : JSON.stringify({ name:w.Name, pto:w.PTO })
-    });
-    ptoDlg.close(); renderTable();
-  };
-
   ptoDlg.showModal();
 }
+
+/* ✅ FIXED: PTO Save Button Implementation */
+ptoSave.onclick = async () => {
+  if (!currentWorker) {
+    console.error('No current worker selected');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/workers/pto', {
+      method : 'POST',
+      headers: {'Content-Type':'application/json'},
+      body   : JSON.stringify({ 
+        name: currentWorker.Name, 
+        pto: currentWorker.PTO || [] 
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (result.success) {
+      // Update the local workers array with the saved PTO data
+      const workerIndex = workers.findIndex(w => w.Name === currentWorker.Name);
+      if (workerIndex !== -1) {
+        workers[workerIndex].PTO = result.PTO || currentWorker.PTO;
+      }
+      
+      // Close dialog and refresh table
+      ptoDlg.close();
+      renderTable();
+      
+      // Optional: Show success message
+      console.log(`✅ PTO saved for ${currentWorker.Name}`);
+    } else {
+      throw new Error('Save failed: ' + (result.error || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('Error saving PTO:', error);
+    alert(`Failed to save PTO: ${error.message}`);
+  }
+};
+
+/* ✅ FIXED: PTO Close Button (just closes, no save) */
+ptoClose.onclick = () => {
+  if (confirm('Close without saving PTO changes?')) {
+    ptoDlg.close();
+    currentWorker = null;  // Clear the reference
+  }
+};
+
+/* ✅ ADDED: Clean up when dialog closes */
+ptoDlg.addEventListener('close', () => {
+  currentWorker = null;
+  if (ptoCal) {
+    ptoCal.destroy();
+    ptoCal = null;
+  }
+});
 
 /* -------------- nav link (top left) ----------------------------- */
 // (links supplied directly in the HTML nav bar, no extra JS needed)
