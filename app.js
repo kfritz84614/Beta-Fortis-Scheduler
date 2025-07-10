@@ -86,15 +86,27 @@ app.delete("/api/workers/:name", (req, res) => {
   saveWorkers(); res.json({ success: true });
 });
 
+/* -------------- PTO (bulk-array or legacy single-day) ---------- */
 app.post("/api/workers/pto", (req, res) => {
-  const { name, date, action } = req.body;
+  const { name, date, action, pto } = req.body;     // ← note extra field
   const w = workers.find(x => x.Name === name);
   if (!w) return res.status(404).json({ error: "worker" });
-  w.PTO = w.PTO || [];
-  if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
-  if (action === "remove") w.PTO = w.PTO.filter(d => d !== date);
-  saveWorkers(); res.json({ success: true, PTO: w.PTO });
+
+  /* ---- NEW bulk mode: client sends the full PTO array ---------- */
+  if (Array.isArray(pto)) {
+    w.PTO = pto;
+
+  /* ---- Legacy mode: single date + action ----------------------- */
+  } else {
+    w.PTO = w.PTO || [];
+    if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
+    if (action === "remove") w.PTO = w.PTO.filter(d => d !== date);
+  }
+
+  saveWorkers();
+  res.json({ success: true, PTO: w.PTO });
 });
+
 
 /* ---------------- shifts ---------------- */
 app.get("/api/shifts", (_, res) => res.json(shifts));
