@@ -11,13 +11,12 @@
 import express from "express";
 import cors    from "cors";
 import OpenAI  from "openai";
+/* Google Sheets wrapper ------------------------------------------------ */
 import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  existsSync,
-  copyFileSync
-} from "fs";
+  listWorkers,
+  upsertWorker,
+  deleteWorker as gsDeleteWorker,
+} from "./lib/gsheets.js";
 import path              from "path";
 import { fileURLToPath } from "url";
 import { randomUUID }    from "crypto";
@@ -60,53 +59,48 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------------- workers ---------------- */
-app.get("/api/workers",   (_, res) => res.json(workers));
+app.get("/api/workers", async (_req, res) =>
+  res.json({ workers: await listWorkers() })
+);
 app.get("/api/abilities", (_, res) => res.json(uniqueAbilities()));
 
-app.post("/api/workers/add", (req, res) => {
-  const w = req.body;
-  if (!w?.Name) return res.status(400).json({ error: "Name required" });
-  if (workers.some(x => x.Name === w.Name))
-    return res.status(409).json({ error: "Exists" });
-  workers.push(w); saveWorkers(); res.json({ success: true });
+app.post("/api/workers/add", async (req, res) => {
+  await upsertWorker(req.body);              // inserts when not found
+  res.json({ success: true });
 });
 
-app.post("/api/workers/update", (req, res) => {
-  const w = req.body;
-  const i = workers.findIndex(x => x.Name === w.Name);
-  if (i === -1) return res.status(404).json({ error: "Not found" });
-  workers[i] = { ...workers[i], ...w }; saveWorkers(); res.json({ success: true });
+app.post("/api/workers/update", async (req, res) => {
+  await upsertWorker(req.body);              // updates when Name matches
+  res.json({ success: true });
 });
 
-app.delete("/api/workers/:name", (req, res) => {
-  const { name } = req.params;
-  const before   = workers.length;
-  workers        = workers.filter(x => x.Name !== name);
-  if (before === workers.length) return res.status(404).json({ error: "Not found" });
-  saveWorkers(); res.json({ success: true });
+app.delete("/api/workers/:name", async (req, res) => {
+  await gsDeleteWorker(req.params.name);
+  res.json({ success: true });
 });
 
 /* -------------- PTO (bulk-array or legacy single-day) ---------- */
-app.post("/api/workers/pto", (req, res) => {
-  const { name, date, action, pto } = req.body;     // ← note extra field
-  const w = workers.find(x => x.Name === name);
+app.post("/api/workers/pto", async (req, res) => {
+  const { name, date, action, pto } = req.body;
+
+  const all = await listWorkers();
+  const w   = all.find((x) => x.Name === name);
   if (!w) return res.status(404).json({ error: "worker" });
 
-  /* ---- NEW bulk mode: client sends the full PTO array ---------- */
+  /* ---- bulk array mode ------------------------------------------- */
   if (Array.isArray(pto)) {
     w.PTO = pto;
 
-  /* ---- Legacy mode: single date + action ----------------------- */
+  /* ---- legacy single-day mode ------------------------------------ */
   } else {
     w.PTO = w.PTO || [];
     if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
-    if (action === "remove") w.PTO = w.PTO.filter(d => d !== date);
+    if (action === "remove") w.PTO = w.PTO.filter((d) => d !== date);
   }
 
-  saveWorkers();
+  await upsertWorker(w);
   res.json({ success: true, PTO: w.PTO });
 });
-
 
 /* ---------------- shifts ---------------- */
 app.get("/api/shifts", (_, res) => res.json(shifts));
