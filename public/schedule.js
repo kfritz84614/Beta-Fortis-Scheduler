@@ -923,8 +923,7 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
     } catch (error) {
       console.error("❌ Manual draw failed:", error);
     }
-  }
-};
+  };
 
 /* ==========================================================================
    NAVIGATION BUTTONS
