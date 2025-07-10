@@ -53,9 +53,30 @@ const empDl    = document.getElementById("workerList");
   initChat();
 })();
 
-/***** PERSIST *****/
-const saveShift   = s=>fetch("/api/shifts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(s)}).then(r=>r.json()).then(({id})=>{ if(!s.id) s.id=id; });
-const deleteShift = id=>fetch(`/api/shifts/${id}`,{method:"DELETE"});
+/***** PERSIST (Google Sheets) *****/
+const persist = () =>
+  fetch("/api/shifts/bulk", {
+    method : "POST",
+    headers: { "Content-Type": "application/json" },
+    body   : JSON.stringify({ shifts })
+  });
+
+/* upsert a shift in the local array, then flush the whole array */
+const saveShift = s => {
+  if (!s.id) {                          /* new shift → client makes an id */
+    s.id = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36));
+  }
+  const i = shifts.findIndex(x => x.id === s.id);
+  if (i === -1) shifts.push(s); else shifts[i] = s;
+  return persist();
+};
+
+/* remove from the array, then flush */
+const deleteShift = id => {
+  const i = shifts.findIndex(x => x.id === id);
+  if (i !== -1) shifts.splice(i, 1);
+  return persist();
+};
 
 /***** GRID RENDER *****/
 function firstStart(n){ const f=shifts.filter(s=>s.name===n&&s.date===iso(day)).sort((a,b)=>a.start-b.start)[0]; return f?f.start:1441; }
