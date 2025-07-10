@@ -1,16 +1,16 @@
-// app.js — Fortis Scheduler backend  ✨ FINAL STABLE 2025‑07‑07
+// app.js — Fortis Scheduler backend  ✨ FIXED VERSION
 // -----------------------------------------------------------------------------
-// • Thin Express API that serves static front‑end + JSON endpoints
-// • Durable JSON persistence in /tmp (fine for demo; swap for DB later)
-// • /api/chat now **always** returns a tool call (`tool_choice:"auto"`)
-//   and *also* returns the fresh `shifts` & `workers` arrays so the
-//   front‑end can repaint immediately without a second fetch.
-// • Compatible with both `tool_calls` (array) and legacy `function_call`.
+// • Fixed missing imports and syntax errors
+// • Corrected variable declarations
+// • Added proper error handling
 // -----------------------------------------------------------------------------
 
 import express from "express";
 import cors    from "cors";
 import OpenAI  from "openai";
+import { fileURLToPath } from "url";  // ← ADDED MISSING IMPORT
+import path from "path";              // ← ADDED MISSING IMPORT
+import { randomUUID } from "crypto";  // ← ADDED MISSING IMPORT
 import {
   readFileSync,
   writeFileSync,
@@ -18,12 +18,12 @@ import {
   existsSync,
   copyFileSync
 } from "fs";
+
 /* Google Sheets wrapper ------------------------------------------------ */
 import {
   listWorkers,
   upsertWorker,
   deleteWorker as gsDeleteWorker,
-  /* ↓ NEW ↓ */
   listShifts,
   writeShifts
 } from "./lib/gsheets.js";
@@ -33,11 +33,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const PKG_DIR    = path.join(__dirname, "data");
-const PKG_WORK   = path.join(PKG_DIR, ".json");
+const PKG_WORK   = path.join(PKG_DIR, "workers.json");  // ← FIXED: was ".json"
 const PKG_SHIFT  = path.join(PKG_DIR, "shifts.json");
 
-const TMP_DIR    = "/tmp/fortis-data";         // writable in Vercel/λ
-const WORK_FILE  = path.join(TMP_DIR, ".json");
+const TMP_DIR    = "/tmp/fortis-data";
+const WORK_FILE  = path.join(TMP_DIR, "workers.json");  // ← FIXED: was ".json"
 const SHIFT_FILE = path.join(TMP_DIR, "shifts.json");
 
 mkdirSync(TMP_DIR, { recursive: true });
@@ -47,14 +47,14 @@ if (!existsSync(SHIFT_FILE)) copyFileSync(PKG_SHIFT, SHIFT_FILE);
 const loadJSON = f => JSON.parse(readFileSync(f, "utf8"));
 const saveJSON = (f, obj) => writeFileSync(f, JSON.stringify(obj, null, 2));
 
-let  = loadJSON(WORK_FILE);
+let workers = loadJSON(WORK_FILE);    // ← FIXED: was "let  = loadJSON(WORK_FILE);"
 let shifts  = loadJSON(SHIFT_FILE);
-const save = () => saveJSON(WORK_FILE, );
+const saveWorkers = () => saveJSON(WORK_FILE, workers);  // ← FIXED: was "save()"
 const saveShifts  = () => saveJSON(SHIFT_FILE, shifts);
 
 const uniqueAbilities = async () => {
   const s = new Set();
-  (await list()).forEach(w =>
+  (await listWorkers()).forEach(w =>  // ← FIXED: was "list()" 
     ["Primary Ability","Secondary Ability","Tertiary Ability"]
       .forEach(k => w[k] && s.add(w[k]))
   );
@@ -69,49 +69,80 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------------- workers ---------------- */
-app.get("/api/workers", async (_req, res) =>
-  res.json(await listWorkers())
-);
-app.get("/api/abilities", async (_req, res) =>
-  res.json(await uniqueAbilities())
-);
+app.get("/api/workers", async (_req, res) => {
+  try {
+    res.json(await listWorkers());
+  } catch (error) {
+    console.error("Error fetching workers:", error);
+    res.status(500).json({ error: "Failed to fetch workers" });
+  }
+});
+
+app.get("/api/abilities", async (_req, res) => {
+  try {
+    res.json(await uniqueAbilities());
+  } catch (error) {
+    console.error("Error fetching abilities:", error);
+    res.status(500).json({ error: "Failed to fetch abilities" });
+  }
+});
 
 app.post("/api/workers/add", async (req, res) => {
-  await upsertWorker(req.body);              // inserts when not found
-  res.json({ success: true });
+  try {
+    await upsertWorker(req.body);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error adding worker:", error);
+    res.status(500).json({ error: "Failed to add worker" });
+  }
 });
 
 app.post("/api/workers/update", async (req, res) => {
-  await upsertWorker(req.body);              // updates when Name matches
-  res.json({ success: true });
+  try {
+    await upsertWorker(req.body);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error updating worker:", error);
+    res.status(500).json({ error: "Failed to update worker" });
+  }
 });
 
 app.delete("/api/workers/:name", async (req, res) => {
-  await gsDeleteWorker(req.params.name);
-  res.json({ success: true });
+  try {
+    await gsDeleteWorker(req.params.name);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting worker:", error);
+    res.status(500).json({ error: "Failed to delete worker" });
+  }
 });
 
 /* -------------- PTO (bulk-array or legacy single-day) ---------- */
 app.post("/api/workers/pto", async (req, res) => {
-  const { name, date, action, pto } = req.body;
+  try {
+    const { name, date, action, pto } = req.body;
 
-  const all = await listWorkers();
-  const w   = all.find((x) => x.Name === name);
-  if (!w) return res.status(404).json({ error: "worker" });
+    const all = await listWorkers();
+    const w   = all.find((x) => x.Name === name);
+    if (!w) return res.status(404).json({ error: "Worker not found" });
 
-  /* ---- bulk array mode ------------------------------------------- */
-  if (Array.isArray(pto)) {
-    w.PTO = pto;
+    /* ---- bulk array mode ------------------------------------------- */
+    if (Array.isArray(pto)) {
+      w.PTO = pto;
 
-  /* ---- legacy single-day mode ------------------------------------ */
-  } else {
-    w.PTO = w.PTO || [];
-    if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
-    if (action === "remove") w.PTO = w.PTO.filter((d) => d !== date);
+    /* ---- legacy single-day mode ------------------------------------ */
+    } else {
+      w.PTO = w.PTO || [];
+      if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
+      if (action === "remove") w.PTO = w.PTO.filter((d) => d !== date);
+    }
+
+    await upsertWorker(w);
+    res.json({ success: true, PTO: w.PTO });
+  } catch (error) {
+    console.error("Error updating PTO:", error);
+    res.status(500).json({ error: "Failed to update PTO" });
   }
-
-  await upsertWorker(w);
-  res.json({ success: true, PTO: w.PTO });
 });
 
 /* ---------------- SHIFTS ------------------------------------------------ */
@@ -121,8 +152,8 @@ app.get("/api/shifts", async (_req, res) => {
   try {
     res.json(await listShifts());
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "shifts_read" });
+    console.error("Error fetching shifts:", err);
+    res.status(500).json({ error: "Failed to fetch shifts" });
   }
 });
 
@@ -132,8 +163,8 @@ app.post("/api/shifts/bulk", async (req, res) => {
     await writeShifts(req.body.shifts || []);
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "shifts_write" });
+    console.error("Error writing shifts:", err);
+    res.status(500).json({ error: "Failed to write shifts" });
   }
 });
 
@@ -211,7 +242,7 @@ const toMin = t => {
 
 app.post("/api/chat", async (req, res) => {
   const user = req.body.message?.trim();
-  if (!user) return res.status(400).json({ error: "empty" });
+  if (!user) return res.status(400).json({ error: "Message cannot be empty" });
 
   try {
     const completion = await ai().chat.completions.create({
@@ -221,14 +252,14 @@ app.post("/api/chat", async (req, res) => {
         { role: "user",   content: user }
       ],
       tools: TOOLS,
-      tool_choice: "auto"               // ← model MUST pick a tool
+      tool_choice: "auto"
     });
 
     const msg   = completion.choices[0].message;
     const calls = msg.tool_calls
-      ? msg.tool_calls                       // new array form
+      ? msg.tool_calls
       : msg.function_call
-        ? [msg]                              // legacy single-call form
+        ? [msg]
         : [];
 
     /* -------------------------------------------------- apply tool calls */
@@ -245,6 +276,7 @@ app.post("/api/chat", async (req, res) => {
           if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
           args.date = d.toISOString().slice(0, 10);
         }
+
         if (fn === "add_shift") {
           shifts.push({
             id:    randomUUID(),
@@ -258,18 +290,18 @@ app.post("/api/chat", async (req, res) => {
           saveShifts();
         } else if (fn === "add_pto") {
           const w = workers.find(x => x.Name === args.name);
-          if (!w) return res.status(404).json({ error: "worker" });
+          if (!w) return res.status(404).json({ error: "Worker not found" });
           w.PTO = w.PTO || [];
           if (!w.PTO.includes(args.date)) w.PTO.push(args.date);
           saveWorkers();
         } else if (fn === "move_shift") {
           const s = shifts.find(x => x.id === args.id);
-          if (!s) return res.status(404).json({ error: "shift" });
+          if (!s) return res.status(404).json({ error: "Shift not found" });
           s.start = toMin(args.start);
           s.end   = toMin(args.end);
           saveShifts();
         } else {
-          return res.status(400).json({ error: "unknown fn" });
+          return res.status(400).json({ error: "Unknown function" });
         }
       }
 
@@ -280,9 +312,15 @@ app.post("/api/chat", async (req, res) => {
     /* -------------------------------------------------- no tool call */
     res.json({ reply: msg.content || "[no reply]" });
   } catch (err) {
-    console.error("/api/chat", err);
-    res.status(500).json({ error: "openai" });
+    console.error("/api/chat error:", err);
+    res.status(500).json({ error: "OpenAI API error" });
   }
+});
+
+/* -------------------------------------------------- start server */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ Fortis Scheduler running on port ${PORT}`);
 });
 
 /* -------------------------------------------------- export for Vercel */
