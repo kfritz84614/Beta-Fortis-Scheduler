@@ -89,11 +89,17 @@ frm.onsubmit = async e => {
   if (mode === 'edit') workers[frm.dataset.idx] = data;
   else                 workers.push(data);
 
-  await fetch('/api/workers/update', {
-    method : 'POST',
-    headers: {'Content-Type':'application/json'},
-    body   : JSON.stringify(data)
-  });
+  /* decide the right endpoint: new → /add   |  edit → /update */
+const url = mode === 'new'
+          ? '/api/workers/add'
+          : '/api/workers/update';
+
+await fetch(url, {
+  method : 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body   : JSON.stringify(data)
+});
+
 
   dlg.close(); renderTable();
 };
@@ -102,11 +108,10 @@ document.getElementById('close-btn').onclick = () => dlg.close();
 /* -------------- delete worker ---------------------------------- */
 async function delWorker (idx) {
   if (!confirm(`Delete ${workers[idx].Name}?`)) return;
-  await fetch('/api/workers/delete', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ Name: workers[idx].Name })
-  });
+  await fetch(`/api/workers/${encodeURIComponent(workers[idx].Name)}`, {
+  method: 'DELETE'
+});
+
   workers.splice(idx,1);
   renderTable();
 }
