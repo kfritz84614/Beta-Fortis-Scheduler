@@ -1,9 +1,8 @@
-// public/schedule.js – 2025‑07‑07  ✅  (complete client file)
+// public/schedule.js – 2025‑07‑07  ✅  FIXED DATA MAPPING
 // -----------------------------------------------------------------------------
-// • Draws the day grid, including PTO greying.
-// • Lets users drag‑create, move and resize shifts via the dialog.
-// • Chat widget posts to /api/chat and, on reply "OK", uses either the
-//   returned arrays (res.shifts / res.workers) or falls back to re‑fetching.
+// • Fixed data transformation between frontend and Google Sheets
+// • Proper field mapping: name↔Worker, start/end↔Start/End, etc.
+// • Consistent data format handling throughout
 // -----------------------------------------------------------------------------
 
 /***** CONFIG *****/
@@ -28,6 +27,37 @@ const iso   = d => d.toISOString().slice(0,10);
 
 const hasPTO = (name,dateISO) => { const w=workers.find(w=>w.Name===name); return w?.PTO?.includes(dateISO); };
 
+/* ===== DATA TRANSFORMATION FUNCTIONS ===== */
+
+/**
+ * Transform Google Sheets shift format to frontend format
+ * Sheets: {Date, Role, Start, End, Worker, Notes}
+ * Frontend: {id, name, role, start, end, date, notes}
+ */
+const sheetsToFrontend = (sheetShift, index) => ({
+  id: `shift-${index}-${sheetShift.Date}-${sheetShift.Worker}`, // Generate consistent ID
+  name: sheetShift.Worker || "",
+  role: sheetShift.Role || "",
+  start: typeof sheetShift.Start === 'number' ? sheetShift.Start : toMin(sheetShift.Start),
+  end: typeof sheetShift.End === 'number' ? sheetShift.End : toMin(sheetShift.End),
+  date: sheetShift.Date || "",
+  notes: sheetShift.Notes || ""
+});
+
+/**
+ * Transform frontend shift format to Google Sheets format
+ * Frontend: {id, name, role, start, end, date, notes}
+ * Sheets: {Date, Role, Start, End, Worker, Notes}
+ */
+const frontendToSheets = (frontendShift) => ({
+  Date: frontendShift.date || "",
+  Role: frontendShift.role || "",
+  Start: frontendShift.start || 0,
+  End: frontendShift.end || 0,
+  Worker: frontendShift.name || "",
+  Notes: frontendShift.notes || ""
+});
+
 /***** STATE *****/
 let workers=[], abilities=[], shifts=[];
 let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
@@ -43,39 +73,77 @@ const empDl    = document.getElementById("workerList");
 
 /***** INIT *****/
 (async()=>{
-  [workers,abilities,shifts]=await Promise.all([
-    fetch("/api/workers" ).then(r=>r.json()),
-    fetch("/api/abilities").then(r=>r.json()),
-    fetch("/api/shifts"   ).then(r=>r.json())
-  ]);
-  empDl.innerHTML=workers.map(w=>`<option value="${w.Name}">`).join("");
-  draw();
-  initChat();
+  try {
+    [workers, abilities] = await Promise.all([
+      fetch("/api/workers").then(r => r.json()),
+      fetch("/api/abilities").then(r => r.json())
+    ]);
+
+    // ✅ FIXED: Transform shifts from Google Sheets format to frontend format
+    const rawShifts = await fetch("/api/shifts").then(r => r.json());
+    shifts = rawShifts.map((shift, index) => sheetsToFrontend(shift, index));
+    
+    console.log(`✅ Loaded ${workers.length} workers, ${shifts.length} shifts`);
+    
+    empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+    draw();
+    initChat();
+  } catch (error) {
+    console.error("❌ Failed to load initial data:", error);
+    alert("Failed to load scheduling data. Please refresh and try again.");
+  }
 })();
 
 /***** PERSIST (Google Sheets) *****/
-const persist = () =>
-  fetch("/api/shifts/bulk", {
-    method : "POST",
-    headers: { "Content-Type": "application/json" },
-    body   : JSON.stringify({ shifts })
-  });
+const persist = async () => {
+  try {
+    // ✅ FIXED: Transform shifts from frontend format to Google Sheets format
+    const sheetsFormat = shifts.map(frontendToSheets);
+    
+    const response = await fetch("/api/shifts/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shifts: sheetsFormat })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log(`✅ Saved ${sheetsFormat.length} shifts to Google Sheets`);
+    return result;
+  } catch (error) {
+    console.error("❌ Failed to save shifts:", error);
+    alert("Failed to save changes. Please try again.");
+    throw error;
+  }
+};
 
 /* upsert a shift in the local array, then flush the whole array */
-const saveShift = s => {
-  if (!s.id) {                          /* new shift → client makes an id */
-    s.id = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36));
+const saveShift = async (shift) => {
+  if (!shift.id) {
+    // Generate a consistent ID for new shifts
+    shift.id = `shift-${Date.now()}-${shift.name}-${shift.role}`;
   }
-  const i = shifts.findIndex(x => x.id === s.id);
-  if (i === -1) shifts.push(s); else shifts[i] = s;
-  return persist();
+  
+  const index = shifts.findIndex(s => s.id === shift.id);
+  if (index === -1) {
+    shifts.push(shift);
+  } else {
+    shifts[index] = shift;
+  }
+  
+  return await persist();
 };
 
 /* remove from the array, then flush */
-const deleteShift = id => {
-  const i = shifts.findIndex(x => x.id === id);
-  if (i !== -1) shifts.splice(i, 1);
-  return persist();
+const deleteShift = async (id) => {
+  const index = shifts.findIndex(s => s.id === id);
+  if (index !== -1) {
+    shifts.splice(index, 1);
+    return await persist();
+  }
 };
 
 /***** GRID RENDER *****/
@@ -96,8 +164,18 @@ function draw(){
     const band=document.createElement("div"); band.className="band"; band.style.gridRow=r+2; if(pto) band.style.background="rgba(0,0,0,.05)"; grid.appendChild(band);
   });
 
-  shifts.filter(s=>s.date===iso(day)).forEach(s=>placeBlock(s,shifts.indexOf(s),rowOf[s.name]));
-  dateH.textContent=day.toDateString(); location.hash=iso(day);
+  // ✅ FIXED: Filter shifts for current day and place blocks
+  const todayShifts = shifts.filter(s => s.date === iso(day));
+  todayShifts.forEach(shift => {
+    const shiftIndex = shifts.findIndex(s => s.id === shift.id);
+    const rowIndex = rowOf[shift.name];
+    if (rowIndex !== undefined) {
+      placeBlock(shift, shiftIndex, rowIndex);
+    }
+  });
+
+  dateH.textContent=day.toDateString(); 
+  location.hash=iso(day);
 }
 
 const lbl=(t,r=1,c=1)=>{ const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d; };
@@ -277,46 +355,55 @@ function openDlg(mode, idx = null, tpl = {}) {
 }
 
 /* ----- SAVE / UPDATE ----- */
-form.onsubmit = e => {
+form.onsubmit = async e => {
   e.preventDefault();
-  const idx = form.index.value ? +form.index.value : null;
-  const shift = {
-    id   : idx != null ? shifts[idx].id : undefined,
-    name : empIn.value.trim(),
-    role : roleSel.value,
-    start: toMin(startI.value),
-    end  : toMin(endI.value),
-    date : iso(day),
-    notes: notesI.value.trim()
-  };
-  if (idx != null) {
-    shifts[idx] = shift;
-  } else {
-    shifts.push(shift);
-  }
-  saveShift(shift).then(() => {
+  
+  try {
+    const idx = form.index.value ? +form.index.value : null;
+    const shift = {
+      id: idx != null ? shifts[idx].id : undefined,
+      name: empIn.value.trim(),
+      role: roleSel.value,
+      start: toMin(startI.value),
+      end: toMin(endI.value),
+      date: iso(day),
+      notes: notesI.value.trim()
+    };
+
+    if (idx != null) {
+      shifts[idx] = shift;
+    } else {
+      shifts.push(shift);
+    }
+
+    await saveShift(shift);
     dlg.close();
     draw();
-  });
+  } catch (error) {
+    console.error("❌ Failed to save shift:", error);
+    // Don't close dialog so user can try again
+  }
 };
 
 /* ----- DELETE ----- */
-delBtn.onclick = () => {
-  const idx = +form.index.value;
-  if (Number.isNaN(idx)) return;
-  const { id } = shifts[idx];
-  shifts.splice(idx, 1);
-  deleteShift(id).then(() => {
+delBtn.onclick = async () => {
+  try {
+    const idx = +form.index.value;
+    if (Number.isNaN(idx)) return;
+    
+    const { id } = shifts[idx];
+    shifts.splice(idx, 1);
+    await deleteShift(id);
     dlg.close();
     draw();
-  });
+  } catch (error) {
+    console.error("❌ Failed to delete shift:", error);
+  }
 };
 
 /* ----- CANCEL ----- */
 cancelBtn.onclick = () => dlg.close();
-
 dlg.oncancel = () => dlg.close();
-
 dlg.addEventListener("close", () => form.reset());
 
 /* ==========================================================================
@@ -365,27 +452,30 @@ function initChat() {
 
       addMsg(res.reply || "[no reply]", "bot");
 
-      /* ---------------------------------------------
-         If the server replied OK, refresh the grid.
-         Prefer arrays returned in-line; otherwise
-         fall back to re-fetching both endpoints.
-      ----------------------------------------------*/
+      /* ✅ FIXED: Update shifts with proper data transformation */
       if ((res.reply || "").trim().toUpperCase() === "OK") {
         if (res.shifts) {
-          shifts  = res.shifts;
-          workers = res.workers || workers;
+          // Transform shifts from Google Sheets format to frontend format
+          shifts = res.shifts.map((shift, index) => sheetsToFrontend(shift, index));
+          
+          if (res.workers) {
+            workers = res.workers;
+            empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+          }
         } else {
-          [workers, shifts] = await Promise.all([
+          // Fallback: re-fetch and transform
+          const [newWorkers, rawShifts] = await Promise.all([
             fetch("/api/workers").then(r => r.json()),
-            fetch("/api/shifts" ).then(r => r.json())
+            fetch("/api/shifts").then(r => r.json())
           ]);
+          workers = newWorkers;
+          shifts = rawShifts.map((shift, index) => sheetsToFrontend(shift, index));
+          empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
         }
-        empDl.innerHTML =
-          workers.map(w => `<option value="${w.Name}">`).join("");
         draw();
       }
     } catch (err) {
-      console.error("chat error", err);
+      console.error("❌ Chat error:", err);
       addMsg("[error]", "bot");
     }
   }
