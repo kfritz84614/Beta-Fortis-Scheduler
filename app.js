@@ -1,189 +1,299 @@
-// app.js — Fortis Scheduler backend ✨ GOOGLE SHEETS ONLY VERSION
+// app.js — Fortis Scheduler backend ✨ CLEAN ARCHITECTURE
 // -----------------------------------------------------------------------------
-// • Pure Google Sheets integration - no local JSON files
-// • Chat logging to Google Sheets
-// • Improved error handling and logging
-// • Fixed all import and syntax errors
+// • 100% Google Sheets integration - zero local file dependencies
+// • Clean, focused code with no legacy remnants
+// • Proper error handling and logging throughout
+// • Ready for production deployment
 // -----------------------------------------------------------------------------
 
 import express from "express";
-import cors    from "cors";
-import OpenAI  from "openai";
+import cors from "cors";
+import OpenAI from "openai";
 import { fileURLToPath } from "url";
 import path from "path";
-import { randomUUID } from "crypto";
 
-/* Google Sheets wrapper ------------------------------------------------ */
+/* Google Sheets integration ------------------------------------------------ */
 import {
   listWorkers,
   upsertWorker,
-  deleteWorker as gsDeleteWorker,
+  deleteWorker,
   listShifts,
   writeShifts,
   addChatMessage,
   getChatHistory
 } from "./lib/gsheets.js";
 
-/* -------------------------------------------------- paths setup */
+/* Express setup ------------------------------------------------------------- */
 const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
+const __dirname = path.dirname(__filename);
 
-/* -------------------------------------------------- express */
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, "public")));
 
-/* -------------------------------------------------- helpers */
+/* Utilities ----------------------------------------------------------------- */
 const uniqueAbilities = async () => {
-  const s = new Set();
-  (await listWorkers()).forEach(w =>
-    ["Primary Ability","Secondary Ability","Tertiary Ability"]
-      .forEach(k => w[k] && s.add(w[k]))
-  );
-  s.add("Lunch");
-  return [...s].sort();
-};
-
-/* ---------------- workers endpoints ---------------- */
-app.get("/api/workers", async (_req, res) => {
   try {
     const workers = await listWorkers();
-    console.log(`✅ Fetched ${workers.length} workers from Google Sheets`);
+    const abilities = new Set();
+    
+    workers.forEach(worker => {
+      ["Primary Ability", "Secondary Ability", "Tertiary Ability"].forEach(field => {
+        if (worker[field] && worker[field].trim()) {
+          abilities.add(worker[field].trim());
+        }
+      });
+    });
+    
+    abilities.add("Lunch");
+    return Array.from(abilities).sort();
+  } catch (error) {
+    console.error("❌ Error building abilities list:", error);
+    return ["Lunch"]; // Fallback to basic ability
+  }
+};
+
+const toMinutes = (timeString) => {
+  if (!timeString) return 0;
+  const cleaned = timeString.replace(/[^0-9]/g, "").padStart(4, "0");
+  return parseInt(cleaned.slice(0, 2)) * 60 + parseInt(cleaned.slice(2));
+};
+
+const normalizeDate = (dateInput) => {
+  if (!dateInput) return new Date().toISOString().slice(0, 10);
+  
+  // If already in YYYY-MM-DD format, return as-is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    return dateInput;
+  }
+  
+  // Handle relative dates
+  const today = new Date();
+  if (/tomorrow/i.test(dateInput)) {
+    today.setDate(today.getDate() + 1);
+  } else if (/yesterday/i.test(dateInput)) {
+    today.setDate(today.getDate() - 1);
+  }
+  
+  return today.toISOString().slice(0, 10);
+};
+
+/* API Endpoints ------------------------------------------------------------- */
+
+/* Workers Management */
+app.get("/api/workers", async (req, res) => {
+  try {
+    const workers = await listWorkers();
+    console.log(`✅ Retrieved ${workers.length} workers from Google Sheets`);
     res.json(workers);
   } catch (error) {
-    console.error("❌ Error fetching workers:", error);
-    res.status(500).json({ error: "Failed to fetch workers from Google Sheets" });
+    console.error("❌ Failed to fetch workers:", error);
+    res.status(500).json({ 
+      error: "Unable to fetch workers from Google Sheets",
+      details: error.message 
+    });
   }
 });
 
-app.get("/api/abilities", async (_req, res) => {
+app.get("/api/abilities", async (req, res) => {
   try {
     const abilities = await uniqueAbilities();
     res.json(abilities);
   } catch (error) {
-    console.error("❌ Error fetching abilities:", error);
-    res.status(500).json({ error: "Failed to fetch abilities" });
+    console.error("❌ Failed to fetch abilities:", error);
+    res.status(500).json({ 
+      error: "Unable to generate abilities list",
+      details: error.message 
+    });
   }
 });
 
 app.post("/api/workers/add", async (req, res) => {
   try {
-    await upsertWorker(req.body);
-    res.json({ success: true });
+    const workerData = {
+      ...req.body,
+      PTO: req.body.PTO || [] // Ensure PTO field exists
+    };
+    
+    await upsertWorker(workerData);
+    console.log(`✅ Added worker: ${workerData.Name}`);
+    res.json({ success: true, message: "Worker added successfully" });
   } catch (error) {
-    console.error("❌ Error adding worker:", error);
-    res.status(500).json({ error: "Failed to add worker to Google Sheets" });
+    console.error("❌ Failed to add worker:", error);
+    res.status(500).json({ 
+      error: "Unable to add worker",
+      details: error.message 
+    });
   }
 });
 
 app.post("/api/workers/update", async (req, res) => {
   try {
-    await upsertWorker(req.body);
-    res.json({ success: true });
+    const workerData = {
+      ...req.body,
+      PTO: req.body.PTO || [] // Ensure PTO field exists
+    };
+    
+    await upsertWorker(workerData);
+    console.log(`✅ Updated worker: ${workerData.Name}`);
+    res.json({ success: true, message: "Worker updated successfully" });
   } catch (error) {
-    console.error("❌ Error updating worker:", error);
-    res.status(500).json({ error: "Failed to update worker in Google Sheets" });
+    console.error("❌ Failed to update worker:", error);
+    res.status(500).json({ 
+      error: "Unable to update worker",
+      details: error.message 
+    });
   }
 });
 
 app.delete("/api/workers/:name", async (req, res) => {
   try {
-    await gsDeleteWorker(req.params.name);
-    res.json({ success: true });
+    const workerName = decodeURIComponent(req.params.name);
+    await deleteWorker(workerName);
+    console.log(`✅ Deleted worker: ${workerName}`);
+    res.json({ success: true, message: "Worker deleted successfully" });
   } catch (error) {
-    console.error("❌ Error deleting worker:", error);
-    res.status(500).json({ error: "Failed to delete worker from Google Sheets" });
+    console.error("❌ Failed to delete worker:", error);
+    res.status(500).json({ 
+      error: "Unable to delete worker",
+      details: error.message 
+    });
   }
 });
 
-/* -------------- PTO endpoint (Google Sheets) ---------- */
+/* PTO Management */
 app.post("/api/workers/pto", async (req, res) => {
   try {
     const { name, date, action, pto } = req.body;
 
-    const workers = await listWorkers();
-    const worker = workers.find(w => w.Name === name);
-    if (!worker) {
-      return res.status(404).json({ error: "Worker not found" });
+    if (!name) {
+      return res.status(400).json({ error: "Worker name is required" });
     }
 
-    /* ---- bulk array mode (from admin panel) ---------------- */
-    if (Array.isArray(pto)) {
-      worker.PTO = pto;
+    const workers = await listWorkers();
+    const worker = workers.find(w => w.Name === name);
+    
+    if (!worker) {
+      return res.status(404).json({ error: `Worker '${name}' not found` });
+    }
 
-    /* ---- legacy single-day mode ----------------------------- */
-    } else {
-      worker.PTO = worker.PTO || [];
-      if (action === "add" && !worker.PTO.includes(date)) {
-        worker.PTO.push(date);
-      }
-      if (action === "remove") {
-        worker.PTO = worker.PTO.filter(d => d !== date);
+    // Initialize PTO array if it doesn't exist
+    worker.PTO = worker.PTO || [];
+
+    if (Array.isArray(pto)) {
+      // Bulk update mode (from admin panel)
+      worker.PTO = pto.filter(d => d && typeof d === 'string');
+    } else if (date) {
+      // Single date mode (legacy support)
+      const normalizedDate = normalizeDate(date);
+      
+      if (action === "add" && !worker.PTO.includes(normalizedDate)) {
+        worker.PTO.push(normalizedDate);
+      } else if (action === "remove") {
+        worker.PTO = worker.PTO.filter(d => d !== normalizedDate);
       }
     }
 
     await upsertWorker(worker);
     console.log(`✅ Updated PTO for ${name}: ${worker.PTO.length} days`);
-    res.json({ success: true, PTO: worker.PTO });
+    
+    res.json({ 
+      success: true, 
+      PTO: worker.PTO,
+      message: `PTO updated for ${name}` 
+    });
   } catch (error) {
-    console.error("❌ Error updating PTO:", error);
-    res.status(500).json({ error: "Failed to update PTO in Google Sheets" });
+    console.error("❌ Failed to update PTO:", error);
+    res.status(500).json({ 
+      error: "Unable to update PTO",
+      details: error.message 
+    });
   }
 });
 
-/* ---------------- shifts endpoints (Google Sheets) ---------- */
-app.get("/api/shifts", async (_req, res) => {
+/* Shifts Management */
+app.get("/api/shifts", async (req, res) => {
   try {
     const shifts = await listShifts();
-    console.log(`✅ Fetched ${shifts.length} shifts from Google Sheets`);
+    console.log(`✅ Retrieved ${shifts.length} shifts from Google Sheets`);
     res.json(shifts);
   } catch (error) {
-    console.error("❌ Error fetching shifts:", error);
-    res.status(500).json({ error: "Failed to fetch shifts from Google Sheets" });
+    console.error("❌ Failed to fetch shifts:", error);
+    res.status(500).json({ 
+      error: "Unable to fetch shifts from Google Sheets",
+      details: error.message 
+    });
   }
 });
 
 app.post("/api/shifts/bulk", async (req, res) => {
   try {
-    const shifts = req.body.shifts || [];
+    const { shifts = [] } = req.body;
+    
+    if (!Array.isArray(shifts)) {
+      return res.status(400).json({ error: "Shifts must be an array" });
+    }
+
     await writeShifts(shifts);
-    res.json({ success: true });
+    console.log(`✅ Saved ${shifts.length} shifts to Google Sheets`);
+    
+    res.json({ 
+      success: true, 
+      count: shifts.length,
+      message: "Shifts saved successfully" 
+    });
   } catch (error) {
-    console.error("❌ Error writing shifts:", error);
-    res.status(500).json({ error: "Failed to write shifts to Google Sheets" });
+    console.error("❌ Failed to save shifts:", error);
+    res.status(500).json({ 
+      error: "Unable to save shifts",
+      details: error.message 
+    });
   }
 });
 
-/* -------------------------------------------------- OpenAI chat */
-let _openai;
-const ai = () =>
-  _openai || (_openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY }));
+/* OpenAI Chat Integration --------------------------------------------------- */
+let openaiClient;
+const getOpenAI = () => {
+  if (!openaiClient) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is required");
+    }
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+};
 
-const SYS_PROMPT = `
-You are Fortis SchedulerBot.
+const SYSTEM_PROMPT = `
+You are Fortis SchedulerBot, an AI assistant for managing work schedules.
 
-• If the user wants to add, move, or remove a shift—or add PTO—you MUST
-  respond with exactly **one** function call (add_shift, add_pto, or
-  move_shift) and no free-text.
-• For any other chit-chat you may answer normally.
+RULES:
+• For scheduling requests (add shift, move shift, add PTO), respond with exactly ONE function call and no additional text
+• For general questions or chat, respond normally without function calls
+• Always use ISO date format (YYYY-MM-DD) for dates
+• Times should be in 24-hour format (e.g., "0800", "1630")
+
+AVAILABLE FUNCTIONS:
+• add_shift: Create a new work shift
+• add_pto: Add time off for a worker  
+• move_shift: Change the time of an existing shift
 `.trim();
 
-const TOOLS = [
+const FUNCTION_TOOLS = [
   {
     type: "function",
     function: {
       name: "add_shift",
-      description: "Add a work shift",
+      description: "Add a new work shift for a worker",
       parameters: {
         type: "object",
         properties: {
-          name:  { type: "string" },
-          role:  { type: "string" },
-          date:  { type: "string" },
-          start: { type: "string" },
-          end:   { type: "string" },
-          notes: { type: "string", nullable: true }
+          name: { type: "string", description: "Worker's name" },
+          role: { type: "string", description: "Type of work (Dispatch, Reservations, etc.)" },
+          date: { type: "string", description: "Date in YYYY-MM-DD format" },
+          start: { type: "string", description: "Start time in 24h format (e.g., '0800')" },
+          end: { type: "string", description: "End time in 24h format (e.g., '1700')" },
+          notes: { type: "string", description: "Optional notes" }
         },
         required: ["name", "role", "date", "start", "end"]
       }
@@ -193,12 +303,12 @@ const TOOLS = [
     type: "function",
     function: {
       name: "add_pto",
-      description: "Add PTO",
+      description: "Add paid time off (PTO) for a worker",
       parameters: {
         type: "object",
         properties: {
-          name: { type: "string" },
-          date: { type: "string" }
+          name: { type: "string", description: "Worker's name" },
+          date: { type: "string", description: "PTO date in YYYY-MM-DD format" }
         },
         required: ["name", "date"]
       }
@@ -208,165 +318,192 @@ const TOOLS = [
     type: "function",
     function: {
       name: "move_shift",
-      description: "Move an existing shift on the same day",
+      description: "Change the start/end time of an existing shift",
       parameters: {
         type: "object",
         properties: {
-          id:    { type: "string" },
-          start: { type: "string" },
-          end:   { type: "string" }
+          name: { type: "string", description: "Worker's name" },
+          date: { type: "string", description: "Shift date in YYYY-MM-DD format" },
+          role: { type: "string", description: "Shift type to identify the specific shift" },
+          start: { type: "string", description: "New start time in 24h format" },
+          end: { type: "string", description: "New end time in 24h format" }
         },
-        required: ["id", "start", "end"]
+        required: ["name", "date", "role", "start", "end"]
       }
     }
   }
 ];
 
-const toMin = t => {
-  const d = t.replace(/[^0-9]/g, "").padStart(4, "0");
-  return +d.slice(0, 2) * 60 + +d.slice(2);
-};
-
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message?.trim();
+  
   if (!userMessage) {
     return res.status(400).json({ error: "Message cannot be empty" });
   }
 
   try {
-    // 📝 Log user message to Google Sheets
+    // Log user message
     await addChatMessage("user", userMessage);
 
-    const completion = await ai().chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: SYS_PROMPT },
-        { role: "user",   content: userMessage }
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userMessage }
       ],
-      tools: TOOLS,
+      tools: FUNCTION_TOOLS,
       tool_choice: "auto"
     });
 
-    const msg = completion.choices[0].message;
-    const calls = msg.tool_calls
-      ? msg.tool_calls
-      : msg.function_call
-        ? [msg]
-        : [];
+    const assistantMessage = completion.choices[0].message;
+    const toolCalls = assistantMessage.tool_calls || [];
 
-    /* -------------------------------------------------- apply tool calls */
-    if (calls.length) {
-      // Get fresh data from Google Sheets
-      let [workers, shifts] = await Promise.all([
+    if (toolCalls.length > 0) {
+      // Handle function calls
+      const [workers, shifts] = await Promise.all([
         listWorkers(),
         listShifts()
       ]);
 
-      for (const call of calls) {
-        const fn = call.function?.name || call.function_call?.name;
-        const args = JSON.parse(
-          call.function?.arguments || call.function_call?.arguments || "{}"
-        );
+      for (const toolCall of toolCalls) {
+        const functionName = toolCall.function.name;
+        const args = JSON.parse(toolCall.function.arguments);
 
-        /* normalize date words → ISO YYYY-MM-DD */
-        if (args.date && !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) {
-          const d = new Date();
-          if (/tomorrow/i.test(args.date)) d.setDate(d.getDate() + 1);
-          args.date = d.toISOString().slice(0, 10);
+        // Normalize date
+        if (args.date) {
+          args.date = normalizeDate(args.date);
         }
 
-        if (fn === "add_shift") {
-          const newShift = {
-            Date: args.date,
-            Role: args.role,
-            Start: toMin(args.start),
-            End: toMin(args.end),
-            Worker: args.name,
-            Notes: args.notes || ""
-          };
-          shifts.push(newShift);
-          await writeShifts(shifts);
-          console.log(`✅ Added shift: ${args.name} - ${args.role} on ${args.date}`);
+        switch (functionName) {
+          case "add_shift":
+            const newShift = {
+              Date: args.date,
+              Role: args.role,
+              Start: toMinutes(args.start),
+              End: toMinutes(args.end),
+              Worker: args.name,
+              Notes: args.notes || ""
+            };
+            
+            shifts.push(newShift);
+            await writeShifts(shifts);
+            console.log(`✅ Added shift: ${args.name} - ${args.role} on ${args.date}`);
+            break;
 
-        } else if (fn === "add_pto") {
-          const worker = workers.find(w => w.Name === args.name);
-          if (!worker) {
-            return res.status(404).json({ error: "Worker not found" });
-          }
-          worker.PTO = worker.PTO || [];
-          if (!worker.PTO.includes(args.date)) {
-            worker.PTO.push(args.date);
-          }
-          await upsertWorker(worker);
-          console.log(`✅ Added PTO: ${args.name} on ${args.date}`);
+          case "add_pto":
+            const worker = workers.find(w => w.Name === args.name);
+            if (!worker) {
+              return res.status(404).json({ error: `Worker '${args.name}' not found` });
+            }
+            
+            worker.PTO = worker.PTO || [];
+            if (!worker.PTO.includes(args.date)) {
+              worker.PTO.push(args.date);
+              await upsertWorker(worker);
+              console.log(`✅ Added PTO: ${args.name} on ${args.date}`);
+            }
+            break;
 
-        } else if (fn === "move_shift") {
-          const shift = shifts.find(s => 
-            s.Worker === args.name && s.Date === args.date // Simplified lookup
-          );
-          if (!shift) {
-            return res.status(404).json({ error: "Shift not found" });
-          }
-          shift.Start = toMin(args.start);
-          shift.End = toMin(args.end);
-          await writeShifts(shifts);
-          console.log(`✅ Moved shift: ${shift.Worker} - ${shift.Role}`);
+          case "move_shift":
+            const shiftIndex = shifts.findIndex(s => 
+              s.Worker === args.name && 
+              s.Date === args.date && 
+              s.Role === args.role
+            );
+            
+            if (shiftIndex === -1) {
+              return res.status(404).json({ 
+                error: `Shift not found for ${args.name} on ${args.date}` 
+              });
+            }
+            
+            shifts[shiftIndex].Start = toMinutes(args.start);
+            shifts[shiftIndex].End = toMinutes(args.end);
+            await writeShifts(shifts);
+            console.log(`✅ Moved shift: ${args.name} - ${args.role} on ${args.date}`);
+            break;
 
-        } else {
-          return res.status(400).json({ error: "Unknown function" });
+          default:
+            console.warn(`⚠️ Unknown function: ${functionName}`);
         }
       }
 
-      // 📝 Log bot response to Google Sheets
+      // Log bot response and return fresh data
       await addChatMessage("bot", "OK");
-
-      /* return fresh data so frontend can redraw instantly */
-      return res.json({ 
-        reply: "OK", 
+      
+      return res.json({
+        reply: "OK",
         shifts: await listShifts(),
         workers: await listWorkers()
       });
     }
 
-    /* -------------------------------------------------- no tool call */
-    const botReply = msg.content || "[no reply]";
-    
-    // 📝 Log bot response to Google Sheets
+    // Regular chat response (no function calls)
+    const botReply = assistantMessage.content || "I'm not sure how to respond to that.";
     await addChatMessage("bot", botReply);
     
     res.json({ reply: botReply });
+
   } catch (error) {
-    console.error("❌ /api/chat error:", error);
-    
-    // 📝 Log error to Google Sheets
+    console.error("❌ Chat error:", error);
     await addChatMessage("bot", "[error]");
     
-    res.status(500).json({ error: "OpenAI API error" });
+    res.status(500).json({ 
+      error: "Chat service temporarily unavailable",
+      details: error.message 
+    });
   }
 });
 
-/* -------------------------------------------------- chat history endpoint */
+/* Chat History */
 app.get("/api/chat/history", async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 50;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200); // Cap at 200
     const history = await getChatHistory(limit);
     res.json(history);
   } catch (error) {
-    console.error("❌ Error fetching chat history:", error);
-    res.status(500).json({ error: "Failed to fetch chat history" });
+    console.error("❌ Failed to fetch chat history:", error);
+    res.status(500).json({ 
+      error: "Unable to fetch chat history",
+      details: error.message 
+    });
   }
 });
 
-/* -------------------------------------------------- start server (for local dev) */
+/* Health Check */
+app.get("/api/health", async (req, res) => {
+  try {
+    // Test Google Sheets connectivity
+    await listWorkers();
+    res.json({ 
+      status: "healthy", 
+      timestamp: new Date().toISOString(),
+      services: {
+        googleSheets: "connected",
+        openai: process.env.OPENAI_API_KEY ? "configured" : "missing"
+      }
+    });
+  } catch (error) {
+    res.status(503).json({ 
+      status: "unhealthy", 
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/* Development Server -------------------------------------------------------- */
 const PORT = process.env.PORT || 3000;
+
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
-    console.log(`✅ Fortis Scheduler running on port ${PORT}`);
-    console.log(`🔗 Workers: http://localhost:${PORT}`);
-    console.log(`🔗 Schedule: http://localhost:${PORT}/schedule.html`);
-    console.log(`🔗 Admin: http://localhost:${PORT}/admin.html`);
+    console.log(`\n🚀 Fortis Scheduler running on port ${PORT}`);
+    console.log(`📊 Workers: http://localhost:${PORT}`);
+    console.log(`📅 Schedule: http://localhost:${PORT}/schedule.html`);
+    console.log(`⚙️  Admin: http://localhost:${PORT}/admin.html`);
+    console.log(`❤️  Health: http://localhost:${PORT}/api/health\n`);
   });
 }
 
-/* -------------------------------------------------- export for Vercel */
+/* Vercel Export ------------------------------------------------------------- */
 export default app;
