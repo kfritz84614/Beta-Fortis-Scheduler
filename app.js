@@ -23,21 +23,21 @@ import {
   listWorkers,
   upsertWorker,
   deleteWorker as gsDeleteWorker,
+  /* ↓ NEW ↓ */
+  listShifts,
+  writeShifts
 } from "./lib/gsheets.js";
-import path              from "path";
-import { fileURLToPath } from "url";
-import { randomUUID }    from "crypto";
 
 /* -------------------------------------------------- paths / tmp setup */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const PKG_DIR    = path.join(__dirname, "data");
-const PKG_WORK   = path.join(PKG_DIR, "workers.json");
+const PKG_WORK   = path.join(PKG_DIR, ".json");
 const PKG_SHIFT  = path.join(PKG_DIR, "shifts.json");
 
 const TMP_DIR    = "/tmp/fortis-data";         // writable in Vercel/λ
-const WORK_FILE  = path.join(TMP_DIR, "workers.json");
+const WORK_FILE  = path.join(TMP_DIR, ".json");
 const SHIFT_FILE = path.join(TMP_DIR, "shifts.json");
 
 mkdirSync(TMP_DIR, { recursive: true });
@@ -47,14 +47,14 @@ if (!existsSync(SHIFT_FILE)) copyFileSync(PKG_SHIFT, SHIFT_FILE);
 const loadJSON = f => JSON.parse(readFileSync(f, "utf8"));
 const saveJSON = (f, obj) => writeFileSync(f, JSON.stringify(obj, null, 2));
 
-let workers = loadJSON(WORK_FILE);
+let  = loadJSON(WORK_FILE);
 let shifts  = loadJSON(SHIFT_FILE);
-const saveWorkers = () => saveJSON(WORK_FILE, workers);
+const save = () => saveJSON(WORK_FILE, );
 const saveShifts  = () => saveJSON(SHIFT_FILE, shifts);
 
 const uniqueAbilities = async () => {
   const s = new Set();
-  (await listWorkers()).forEach(w =>
+  (await list()).forEach(w =>
     ["Primary Ability","Secondary Ability","Tertiary Ability"]
       .forEach(k => w[k] && s.add(w[k]))
   );
@@ -114,26 +114,27 @@ app.post("/api/workers/pto", async (req, res) => {
   res.json({ success: true, PTO: w.PTO });
 });
 
-/* ---------------- shifts ---------------- */
-app.get("/api/shifts", (_, res) => res.json(shifts));
+/* ---------------- SHIFTS ------------------------------------------------ */
 
-app.post("/api/shifts", (req, res) => {
-  const s = req.body;
-  if (!s.id) {
-    s.id = randomUUID(); shifts.push(s);
-  } else {
-    const i = shifts.findIndex(x => x.id === s.id);
-    if (i === -1) shifts.push(s); else shifts[i] = s;
+/* GET  /api/shifts  → array of {Date, Role, Start, End, Worker, Notes} */
+app.get("/api/shifts", async (_req, res) => {
+  try {
+    res.json(await listShifts());
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "shifts_read" });
   }
-  saveShifts(); res.json({ success: true, id: s.id });
 });
 
-app.delete("/api/shifts/:id", (req, res) => {
-  const { id } = req.params;
-  const before = shifts.length;
-  shifts       = shifts.filter(x => x.id !== id);
-  if (before === shifts.length) return res.status(404).json({ error: "Not found" });
-  saveShifts(); res.json({ success: true });
+/* POST /api/shifts/bulk  { shifts:[…] } → overwrite the Shifts sheet */
+app.post("/api/shifts/bulk", async (req, res) => {
+  try {
+    await writeShifts(req.body.shifts || []);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "shifts_write" });
+  }
 });
 
 /* -------------------------------------------------- OpenAI chat */
