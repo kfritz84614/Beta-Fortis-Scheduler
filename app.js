@@ -1,23 +1,17 @@
-// app.js — Fortis Scheduler backend  ✨ FIXED VERSION
+// app.js — Fortis Scheduler backend ✨ GOOGLE SHEETS ONLY VERSION
 // -----------------------------------------------------------------------------
-// • Fixed missing imports and syntax errors
-// • Corrected variable declarations
-// • Added proper error handling
+// • Pure Google Sheets integration - no local JSON files
+// • Chat logging to Google Sheets
+// • Improved error handling and logging
+// • Fixed all import and syntax errors
 // -----------------------------------------------------------------------------
 
 import express from "express";
 import cors    from "cors";
 import OpenAI  from "openai";
-import { fileURLToPath } from "url";  // ← ADDED MISSING IMPORT
-import path from "path";              // ← ADDED MISSING IMPORT
-import { randomUUID } from "crypto";  // ← ADDED MISSING IMPORT
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  existsSync,
-  copyFileSync
-} from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
+import { randomUUID } from "crypto";
 
 /* Google Sheets wrapper ------------------------------------------------ */
 import {
@@ -25,42 +19,14 @@ import {
   upsertWorker,
   deleteWorker as gsDeleteWorker,
   listShifts,
-  writeShifts
+  writeShifts,
+  addChatMessage,
+  getChatHistory
 } from "./lib/gsheets.js";
 
-/* -------------------------------------------------- paths / tmp setup */
+/* -------------------------------------------------- paths setup */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-
-const PKG_DIR    = path.join(__dirname, "data");
-const PKG_WORK   = path.join(PKG_DIR, "workers.json");  // ← FIXED: was ".json"
-const PKG_SHIFT  = path.join(PKG_DIR, "shifts.json");
-
-const TMP_DIR    = "/tmp/fortis-data";
-const WORK_FILE  = path.join(TMP_DIR, "workers.json");  // ← FIXED: was ".json"
-const SHIFT_FILE = path.join(TMP_DIR, "shifts.json");
-
-mkdirSync(TMP_DIR, { recursive: true });
-if (!existsSync(WORK_FILE )) copyFileSync(PKG_WORK , WORK_FILE );
-if (!existsSync(SHIFT_FILE)) copyFileSync(PKG_SHIFT, SHIFT_FILE);
-
-const loadJSON = f => JSON.parse(readFileSync(f, "utf8"));
-const saveJSON = (f, obj) => writeFileSync(f, JSON.stringify(obj, null, 2));
-
-let workers = loadJSON(WORK_FILE);    // ← FIXED: was "let  = loadJSON(WORK_FILE);"
-let shifts  = loadJSON(SHIFT_FILE);
-const saveWorkers = () => saveJSON(WORK_FILE, workers);  // ← FIXED: was "save()"
-const saveShifts  = () => saveJSON(SHIFT_FILE, shifts);
-
-const uniqueAbilities = async () => {
-  const s = new Set();
-  (await listWorkers()).forEach(w =>  // ← FIXED: was "list()" 
-    ["Primary Ability","Secondary Ability","Tertiary Ability"]
-      .forEach(k => w[k] && s.add(w[k]))
-  );
-  s.add("Lunch");
-  return [...s].sort();
-};
 
 /* -------------------------------------------------- express */
 const app = express();
@@ -68,21 +34,35 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-/* ---------------- workers ---------------- */
+/* -------------------------------------------------- helpers */
+const uniqueAbilities = async () => {
+  const s = new Set();
+  (await listWorkers()).forEach(w =>
+    ["Primary Ability","Secondary Ability","Tertiary Ability"]
+      .forEach(k => w[k] && s.add(w[k]))
+  );
+  s.add("Lunch");
+  return [...s].sort();
+};
+
+/* ---------------- workers endpoints ---------------- */
 app.get("/api/workers", async (_req, res) => {
   try {
-    res.json(await listWorkers());
+    const workers = await listWorkers();
+    console.log(`✅ Fetched ${workers.length} workers from Google Sheets`);
+    res.json(workers);
   } catch (error) {
-    console.error("Error fetching workers:", error);
-    res.status(500).json({ error: "Failed to fetch workers" });
+    console.error("❌ Error fetching workers:", error);
+    res.status(500).json({ error: "Failed to fetch workers from Google Sheets" });
   }
 });
 
 app.get("/api/abilities", async (_req, res) => {
   try {
-    res.json(await uniqueAbilities());
+    const abilities = await uniqueAbilities();
+    res.json(abilities);
   } catch (error) {
-    console.error("Error fetching abilities:", error);
+    console.error("❌ Error fetching abilities:", error);
     res.status(500).json({ error: "Failed to fetch abilities" });
   }
 });
@@ -92,8 +72,8 @@ app.post("/api/workers/add", async (req, res) => {
     await upsertWorker(req.body);
     res.json({ success: true });
   } catch (error) {
-    console.error("Error adding worker:", error);
-    res.status(500).json({ error: "Failed to add worker" });
+    console.error("❌ Error adding worker:", error);
+    res.status(500).json({ error: "Failed to add worker to Google Sheets" });
   }
 });
 
@@ -102,8 +82,8 @@ app.post("/api/workers/update", async (req, res) => {
     await upsertWorker(req.body);
     res.json({ success: true });
   } catch (error) {
-    console.error("Error updating worker:", error);
-    res.status(500).json({ error: "Failed to update worker" });
+    console.error("❌ Error updating worker:", error);
+    res.status(500).json({ error: "Failed to update worker in Google Sheets" });
   }
 });
 
@@ -112,59 +92,66 @@ app.delete("/api/workers/:name", async (req, res) => {
     await gsDeleteWorker(req.params.name);
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting worker:", error);
-    res.status(500).json({ error: "Failed to delete worker" });
+    console.error("❌ Error deleting worker:", error);
+    res.status(500).json({ error: "Failed to delete worker from Google Sheets" });
   }
 });
 
-/* -------------- PTO (bulk-array or legacy single-day) ---------- */
+/* -------------- PTO endpoint (Google Sheets) ---------- */
 app.post("/api/workers/pto", async (req, res) => {
   try {
     const { name, date, action, pto } = req.body;
 
-    const all = await listWorkers();
-    const w   = all.find((x) => x.Name === name);
-    if (!w) return res.status(404).json({ error: "Worker not found" });
-
-    /* ---- bulk array mode ------------------------------------------- */
-    if (Array.isArray(pto)) {
-      w.PTO = pto;
-
-    /* ---- legacy single-day mode ------------------------------------ */
-    } else {
-      w.PTO = w.PTO || [];
-      if (action === "add"    && !w.PTO.includes(date)) w.PTO.push(date);
-      if (action === "remove") w.PTO = w.PTO.filter((d) => d !== date);
+    const workers = await listWorkers();
+    const worker = workers.find(w => w.Name === name);
+    if (!worker) {
+      return res.status(404).json({ error: "Worker not found" });
     }
 
-    await upsertWorker(w);
-    res.json({ success: true, PTO: w.PTO });
+    /* ---- bulk array mode (from admin panel) ---------------- */
+    if (Array.isArray(pto)) {
+      worker.PTO = pto;
+
+    /* ---- legacy single-day mode ----------------------------- */
+    } else {
+      worker.PTO = worker.PTO || [];
+      if (action === "add" && !worker.PTO.includes(date)) {
+        worker.PTO.push(date);
+      }
+      if (action === "remove") {
+        worker.PTO = worker.PTO.filter(d => d !== date);
+      }
+    }
+
+    await upsertWorker(worker);
+    console.log(`✅ Updated PTO for ${name}: ${worker.PTO.length} days`);
+    res.json({ success: true, PTO: worker.PTO });
   } catch (error) {
-    console.error("Error updating PTO:", error);
-    res.status(500).json({ error: "Failed to update PTO" });
+    console.error("❌ Error updating PTO:", error);
+    res.status(500).json({ error: "Failed to update PTO in Google Sheets" });
   }
 });
 
-/* ---------------- SHIFTS ------------------------------------------------ */
-
-/* GET  /api/shifts  → array of {Date, Role, Start, End, Worker, Notes} */
+/* ---------------- shifts endpoints (Google Sheets) ---------- */
 app.get("/api/shifts", async (_req, res) => {
   try {
-    res.json(await listShifts());
-  } catch (err) {
-    console.error("Error fetching shifts:", err);
-    res.status(500).json({ error: "Failed to fetch shifts" });
+    const shifts = await listShifts();
+    console.log(`✅ Fetched ${shifts.length} shifts from Google Sheets`);
+    res.json(shifts);
+  } catch (error) {
+    console.error("❌ Error fetching shifts:", error);
+    res.status(500).json({ error: "Failed to fetch shifts from Google Sheets" });
   }
 });
 
-/* POST /api/shifts/bulk  { shifts:[…] } → overwrite the Shifts sheet */
 app.post("/api/shifts/bulk", async (req, res) => {
   try {
-    await writeShifts(req.body.shifts || []);
+    const shifts = req.body.shifts || [];
+    await writeShifts(shifts);
     res.json({ success: true });
-  } catch (err) {
-    console.error("Error writing shifts:", err);
-    res.status(500).json({ error: "Failed to write shifts" });
+  } catch (error) {
+    console.error("❌ Error writing shifts:", error);
+    res.status(500).json({ error: "Failed to write shifts to Google Sheets" });
   }
 });
 
@@ -241,21 +228,26 @@ const toMin = t => {
 };
 
 app.post("/api/chat", async (req, res) => {
-  const user = req.body.message?.trim();
-  if (!user) return res.status(400).json({ error: "Message cannot be empty" });
+  const userMessage = req.body.message?.trim();
+  if (!userMessage) {
+    return res.status(400).json({ error: "Message cannot be empty" });
+  }
 
   try {
+    // 📝 Log user message to Google Sheets
+    await addChatMessage("user", userMessage);
+
     const completion = await ai().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: SYS_PROMPT },
-        { role: "user",   content: user }
+        { role: "user",   content: userMessage }
       ],
       tools: TOOLS,
       tool_choice: "auto"
     });
 
-    const msg   = completion.choices[0].message;
+    const msg = completion.choices[0].message;
     const calls = msg.tool_calls
       ? msg.tool_calls
       : msg.function_call
@@ -264,8 +256,14 @@ app.post("/api/chat", async (req, res) => {
 
     /* -------------------------------------------------- apply tool calls */
     if (calls.length) {
+      // Get fresh data from Google Sheets
+      let [workers, shifts] = await Promise.all([
+        listWorkers(),
+        listShifts()
+      ]);
+
       for (const call of calls) {
-        const fn   = call.function?.name || call.function_call?.name;
+        const fn = call.function?.name || call.function_call?.name;
         const args = JSON.parse(
           call.function?.arguments || call.function_call?.arguments || "{}"
         );
@@ -278,50 +276,97 @@ app.post("/api/chat", async (req, res) => {
         }
 
         if (fn === "add_shift") {
-          shifts.push({
-            id:    randomUUID(),
-            name:  args.name,
-            role:  args.role,
-            date:  args.date,
-            start: toMin(args.start),
-            end:   toMin(args.end),
-            notes: args.notes || ""
-          });
-          saveShifts();
+          const newShift = {
+            Date: args.date,
+            Role: args.role,
+            Start: toMin(args.start),
+            End: toMin(args.end),
+            Worker: args.name,
+            Notes: args.notes || ""
+          };
+          shifts.push(newShift);
+          await writeShifts(shifts);
+          console.log(`✅ Added shift: ${args.name} - ${args.role} on ${args.date}`);
+
         } else if (fn === "add_pto") {
-          const w = workers.find(x => x.Name === args.name);
-          if (!w) return res.status(404).json({ error: "Worker not found" });
-          w.PTO = w.PTO || [];
-          if (!w.PTO.includes(args.date)) w.PTO.push(args.date);
-          saveWorkers();
+          const worker = workers.find(w => w.Name === args.name);
+          if (!worker) {
+            return res.status(404).json({ error: "Worker not found" });
+          }
+          worker.PTO = worker.PTO || [];
+          if (!worker.PTO.includes(args.date)) {
+            worker.PTO.push(args.date);
+          }
+          await upsertWorker(worker);
+          console.log(`✅ Added PTO: ${args.name} on ${args.date}`);
+
         } else if (fn === "move_shift") {
-          const s = shifts.find(x => x.id === args.id);
-          if (!s) return res.status(404).json({ error: "Shift not found" });
-          s.start = toMin(args.start);
-          s.end   = toMin(args.end);
-          saveShifts();
+          const shift = shifts.find(s => 
+            s.Worker === args.name && s.Date === args.date // Simplified lookup
+          );
+          if (!shift) {
+            return res.status(404).json({ error: "Shift not found" });
+          }
+          shift.Start = toMin(args.start);
+          shift.End = toMin(args.end);
+          await writeShifts(shifts);
+          console.log(`✅ Moved shift: ${shift.Worker} - ${shift.Role}`);
+
         } else {
           return res.status(400).json({ error: "Unknown function" });
         }
       }
 
-      /* return the fresh arrays so the front-end can redraw instantly */
-      return res.json({ reply: "OK", shifts, workers });
+      // 📝 Log bot response to Google Sheets
+      await addChatMessage("bot", "OK");
+
+      /* return fresh data so frontend can redraw instantly */
+      return res.json({ 
+        reply: "OK", 
+        shifts: await listShifts(),
+        workers: await listWorkers()
+      });
     }
 
     /* -------------------------------------------------- no tool call */
-    res.json({ reply: msg.content || "[no reply]" });
-  } catch (err) {
-    console.error("/api/chat error:", err);
+    const botReply = msg.content || "[no reply]";
+    
+    // 📝 Log bot response to Google Sheets
+    await addChatMessage("bot", botReply);
+    
+    res.json({ reply: botReply });
+  } catch (error) {
+    console.error("❌ /api/chat error:", error);
+    
+    // 📝 Log error to Google Sheets
+    await addChatMessage("bot", "[error]");
+    
     res.status(500).json({ error: "OpenAI API error" });
   }
 });
 
-/* -------------------------------------------------- start server */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ Fortis Scheduler running on port ${PORT}`);
+/* -------------------------------------------------- chat history endpoint */
+app.get("/api/chat/history", async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const history = await getChatHistory(limit);
+    res.json(history);
+  } catch (error) {
+    console.error("❌ Error fetching chat history:", error);
+    res.status(500).json({ error: "Failed to fetch chat history" });
+  }
 });
+
+/* -------------------------------------------------- start server (for local dev) */
+const PORT = process.env.PORT || 3000;
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`✅ Fortis Scheduler running on port ${PORT}`);
+    console.log(`🔗 Workers: http://localhost:${PORT}`);
+    console.log(`🔗 Schedule: http://localhost:${PORT}/schedule.html`);
+    console.log(`🔗 Admin: http://localhost:${PORT}/admin.html`);
+  });
+}
 
 /* -------------------------------------------------- export for Vercel */
 export default app;
