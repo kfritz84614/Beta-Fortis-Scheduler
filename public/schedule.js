@@ -659,6 +659,8 @@ dlg.addEventListener("close", () => form.reset());
 /* ==========================================================================
    ENHANCED CHAT WIDGET  
    ========================================================================== */
+// Fixed initChat function for schedule.js - replace the entire function
+
 function initChat() {
   const host = document.getElementById("chatBox");
   if (!host) {
@@ -696,16 +698,16 @@ function initChat() {
       </div>
     </div>`;
 
-  const log   = host.querySelector("#chatLog");
+  const log = host.querySelector("#chatLog");
   const input = host.querySelector("#chatInput");
-  const send  = host.querySelector("#chatSend");
-  const help  = host.querySelector("#chatHelp");
+  const send = host.querySelector("#chatSend");
+  const help = host.querySelector("#chatHelp");
   const quickActions = host.querySelector("#quickActions");
 
   // Show enhanced welcome message
   addMsg("👋 I'm your advanced scheduling assistant! I automatically fix coverage issues and build complete schedules. I can understand context like 'move Sarah's morning shift' or 'fix today's coverage problems'.", "bot");
 
-  /* ---- Helper to add chat bubbles ---- */
+  // Helper to add chat bubbles
   function addMsg(txt, who) {
     const el = document.createElement("div");
     el.className = who === "user" ? "text-right" : "";
@@ -719,8 +721,8 @@ function initChat() {
     log.scrollTop = log.scrollHeight;
   }
 
-  /* ---- Quick action buttons ---- */
-  host.addEventListener('click', (e) => {
+  // Quick action buttons
+  host.addEventListener('click', function(e) {
     if (e.target.classList.contains('quick-btn')) {
       const message = e.target.dataset.msg;
       input.value = message;
@@ -728,73 +730,73 @@ function initChat() {
     }
   });
 
-  /* ---- Quick Actions Menu ---- */
-  quickActions.onclick = () => {
+  // Quick Actions Menu
+  quickActions.onclick = function() {
     const currentDate = iso(day);
-    const todayShifts = shifts.filter(s => s.date === currentDate);
+    const todayShifts = shifts.filter(function(s) { return s.date === currentDate; });
     const coverage = analyzeCoverage(currentDate);
     
     let quickActionsMenu = `
 🚀 **Smart Quick Actions for ${day.toDateString()}:**
 
 **Schedule Building:**
-- "Build complete schedule for today" - Full day coverage
-- "Build schedule for tomorrow" - Next day planning  
-- "Build this week" - Monday through Friday
-- "Replace today's schedule" - Start fresh
+• "Build complete schedule for today" - Full day coverage
+• "Build schedule for tomorrow" - Next day planning  
+• "Build this week" - Monday through Friday
+• "Replace today's schedule" - Start fresh
 
 **Problem Solving:**
-- "Fix coverage violations" - Auto-fix all issues
-- "Optimize lunch schedule" - Better lunch timing
-- "Add evening coverage" - Extend hours past 5pm
+• "Fix coverage violations" - Auto-fix all issues
+• "Optimize lunch schedule" - Better lunch timing
+• "Add evening coverage" - Extend hours past 5pm
 
 **Current Context:**
 📊 Shifts today: ${todayShifts.length}
 ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}` : '✅ Coverage: Good'}
 
 **Smart References I Understand:**
-- "Sarah's morning shift" = earliest shift for Sarah today
-- "move the dispatch shift to 9am" = change dispatch start time
-- "add more reservations coverage" = increase staffing
-- "schedule lunch for the team" = add lunch breaks
+• "Sarah's morning shift" = earliest shift for Sarah today
+• "move the dispatch shift to 9am" = change dispatch start time
+• "add more reservations coverage" = increase staffing
+• "schedule lunch for the team" = add lunch breaks
     `.trim();
     
     addMsg(quickActionsMenu, "bot");
   };
 
-  /* ---- Help/Examples dialog ---- */
-  help.onclick = () => {
+  // Help/Examples dialog
+  help.onclick = function() {
     const examples = `
 🧠 **I'm context-aware! Try these natural commands:**
 
 **Building Schedules:**
-- "Build schedule for today" 
-- "Create next week's schedule"
-- "Generate Friday's coverage"
+• "Build schedule for today" 
+• "Create next week's schedule"
+• "Generate Friday's coverage"
 
 **Fixing Problems:**  
-- "Fix today's coverage issues"
-- "There are violations - fix them"
-- "We need more dispatch coverage"
+• "Fix today's coverage issues"
+• "There are violations - fix them"
+• "We need more dispatch coverage"
 
 **Moving Shifts:**
-- "Move Sarah's morning shift to 9am"
-- "Change the dispatch shift to start at 8:30"
-- "Move Elliott's reservations to afternoon"
+• "Move Sarah's morning shift to 9am"
+• "Change the dispatch shift to start at 8:30"
+• "Move Elliott's reservations to afternoon"
 
 **Adding Staff:**
-- "Add Adam to dispatch today 8am-5pm"
-- "Schedule more reservations coverage"  
-- "Put Katy on evening shift"
+• "Add Adam to dispatch today 8am-5pm"
+• "Schedule more reservations coverage"  
+• "Put Katy on evening shift"
 
 **Time Off:**
-- "Add PTO for Hudson tomorrow"
-- "Sarah is out Friday"
+• "Add PTO for Hudson tomorrow"
+• "Sarah is out Friday"
 
 **Analysis:**
-- "Check coverage for today"
-- "Are we properly staffed?"
-- "Show me the lunch schedule"
+• "Check coverage for today"
+• "Are we properly staffed?"
+• "Show me the lunch schedule"
 
 💡 **I automatically:**
 ✅ Fix coverage violations when building schedules
@@ -807,7 +809,7 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
     addMsg(examples, "bot");
   };
 
-  /* ---- Enhanced message sending with better context ---- */
+  // Enhanced message sending with better context
   async function sendChat(msg) {
     addMsg(msg, "user");
     input.value = "";
@@ -821,31 +823,37 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
 
     try {
       const res = await fetch("/api/chat", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ 
+        body: JSON.stringify({ 
           message: msg,
           context: {
             currentDate: iso(day),
-            currentShifts: shifts.filter(s => s.date === iso(day)).length,
+            currentShifts: shifts.filter(function(s) { return s.date === iso(day); }).length,
             hasViolations: analyzeCoverage(iso(day)).violations.length > 0
           }
         })
-      }).then(r => r.json());
-
+      });
+      
+      const data = await res.json();
+      
       typingEl.remove();
-      addMsg(res.reply || "[no reply]", "bot");
+      addMsg(data.reply || "[no reply]", "bot");
 
-      /* Update shifts and redraw if needed */
-      if (res.shifts && Array.isArray(res.shifts)) {
+      // Update shifts and redraw if needed
+      if (data.shifts && Array.isArray(data.shifts)) {
         // Transform shifts from Google Sheets format to frontend format
         const oldShiftCount = shifts.length;
-        shifts = res.shifts.map((shift, index) => sheetsToFrontend(shift, index));
+        shifts = data.shifts.map(function(shift, index) {
+          return sheetsToFrontend(shift, index);
+        });
         
-        if (res.workers) {
-          workers = res.workers;
+        if (data.workers) {
+          workers = data.workers;
           if (empDl) {
-            empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
+            empDl.innerHTML = workers.map(function(w) {
+              return `<option value="${w.Name}">`;
+            }).join("");
           }
         }
         
@@ -868,8 +876,17 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
     }
   }
 
-  send.onclick    = () => input.value.trim() && sendChat(input.value.trim());
-  input.onkeydown = e => { if (e.key === "Enter") send.click(); };
+  send.onclick = function() {
+    if (input.value.trim()) {
+      sendChat(input.value.trim());
+    }
+  };
+  
+  input.onkeydown = function(e) {
+    if (e.key === "Enter") {
+      send.click();
+    }
+  };
   
   // Enhanced autocomplete suggestions
   const suggestions = [
@@ -884,10 +901,12 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
     "Add PTO for"
   ];
   
-  input.addEventListener('input', (e) => {
+  input.addEventListener('input', function(e) {
     const value = e.target.value.toLowerCase();
     if (value.length > 2) {
-      const matches = suggestions.filter(s => s.toLowerCase().includes(value));
+      const matches = suggestions.filter(function(s) {
+        return s.toLowerCase().includes(value);
+      });
       if (matches.length > 0) {
         input.title = matches.slice(0, 3).join('\n');
       }
