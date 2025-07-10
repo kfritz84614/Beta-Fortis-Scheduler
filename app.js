@@ -11,6 +11,13 @@
 import express from "express";
 import cors    from "cors";
 import OpenAI  from "openai";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  copyFileSync
+} from "fs";
 /* Google Sheets wrapper ------------------------------------------------ */
 import {
   listWorkers,
