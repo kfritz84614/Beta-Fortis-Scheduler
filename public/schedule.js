@@ -1,8 +1,9 @@
-// public/schedule.js – 2025‑07‑07  ✅  FIXED DATA MAPPING
+// public/schedule.js – Enhanced with Advanced Scheduling Bot
 // -----------------------------------------------------------------------------
-// • Fixed data transformation between frontend and Google Sheets
-// • Proper field mapping: name↔Worker, start/end↔Start/End, etc.
-// • Consistent data format handling throughout
+// • Advanced chat interface with scheduling examples
+// • Support for full day/week schedule generation
+// • Coverage analysis and validation display
+// • Smart scheduling suggestions
 // -----------------------------------------------------------------------------
 
 /***** CONFIG *****/
@@ -16,6 +17,7 @@ const COLORS = {
   Marketing:        "#7c3aed",
   Sales:            "#d97706",
   "Badges/Projects":"#0ea5e9",
+  Scheduling:       "#f97316",
   Lunch:            "#8b5a2b"
 };
 
@@ -57,6 +59,55 @@ const frontendToSheets = (frontendShift) => ({
   Worker: frontendShift.name || "",
   Notes: frontendShift.notes || ""
 });
+
+/***** COVERAGE ANALYSIS *****/
+const analyzeCoverage = (date) => {
+  const dayShifts = shifts.filter(s => s.date === date);
+  const analysis = {
+    violations: [],
+    warnings: [],
+    summary: { reservations: 0, dispatch: 0, lunch: 0 }
+  };
+  
+  // Check coverage for each hour
+  for (let hour = 8; hour <= 20; hour++) {
+    const timeStart = hour * 60;
+    const timeEnd = timeStart + 60;
+    
+    const activeShifts = dayShifts.filter(s => 
+      s.start < timeEnd && s.end > timeStart && s.role !== 'Lunch'
+    );
+    
+    const reservations = activeShifts.filter(s => s.role === 'Reservations').length;
+    const dispatch = activeShifts.filter(s => s.role === 'Dispatch').length;
+    
+    // Daytime coverage (08:00-17:00)
+    if (hour >= 8 && hour < 17) {
+      if (reservations !== 3) {
+        analysis.violations.push(`${hour}:00 - Expected 3 Reservations, got ${reservations}`);
+      }
+      if (dispatch !== 1) {
+        analysis.violations.push(`${hour}:00 - Expected 1 Dispatch, got ${dispatch}`);
+      }
+    }
+    // Evening coverage (17:00+)
+    else if (hour >= 17) {
+      if (reservations < 2) {
+        analysis.warnings.push(`${hour}:00 - Low Reservations coverage (${reservations})`);
+      }
+      if (dispatch < 1) {
+        analysis.violations.push(`${hour}:00 - No Dispatch coverage`);
+      }
+    }
+  }
+  
+  // Summary stats
+  analysis.summary.reservations = Math.max(...dayShifts.filter(s => s.role === 'Reservations').map(s => 1)) || 0;
+  analysis.summary.dispatch = Math.max(...dayShifts.filter(s => s.role === 'Dispatch').map(s => 1)) || 0;
+  analysis.summary.lunch = dayShifts.filter(s => s.role === 'Lunch').length;
+  
+  return analysis;
+};
 
 /***** STATE *****/
 let workers=[], abilities=[], shifts=[];
@@ -182,10 +233,31 @@ function draw(){
 
   dateH.textContent=day.toDateString(); 
   location.hash=iso(day);
+  
+  // Update coverage analysis
+  updateCoverageDisplay();
 }
 
 const lbl=(t,r=1,c=1)=>{ const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d; };
 const cell=(r,c,ds={})=>{ const d=document.createElement("div"); d.className="cell"; d.style.gridRow=r; d.style.gridColumn=c; Object.assign(d.dataset,ds); return d; };
+
+// Update coverage display
+const updateCoverageDisplay = () => {
+  const currentDate = iso(day);
+  const analysis = analyzeCoverage(currentDate);
+  
+  // Update date header with coverage status
+  let statusIcon = "✅";
+  if (analysis.violations.length > 0) statusIcon = "❌";
+  else if (analysis.warnings.length > 0) statusIcon = "⚠️";
+  
+  dateH.innerHTML = `${day.toDateString()} ${statusIcon}`;
+  dateH.title = analysis.violations.length > 0 
+    ? `Coverage violations: ${analysis.violations.length}` 
+    : analysis.warnings.length > 0 
+    ? `Coverage warnings: ${analysis.warnings.length}`
+    : "Coverage requirements met";
+};
 
 /***** BLOCKS *****/
 function placeBlock(s,idx,row){
@@ -424,41 +496,116 @@ dlg.oncancel = () => dlg.close();
 dlg.addEventListener("close", () => form.reset());
 
 /* ==========================================================================
-   CHAT WIDGET
+   ENHANCED CHAT WIDGET  
    ========================================================================== */
 function initChat() {
   const host = document.getElementById("chatBox");
   host.innerHTML = `
-    <div class="bg-white rounded shadow flex flex-col h-72">
-      <div class="px-3 py-1 font-semibold border-b">SydPo Bot</div>
-      <div id="chatLog" class="flex-1 overflow-y-auto space-y-1 p-2 text-sm"></div>
-      <div class="border-t p-2 flex gap-2">
-        <input id="chatInput" type="text"
-               class="flex-1 border rounded px-2 py-1 text-sm"
-               placeholder="Ask me…" autocomplete="off" />
-        <button id="chatSend" class="text-blue-600 text-xl">&#x27A4;</button>
+    <div class="bg-white rounded shadow flex flex-col h-96 border">
+      <div class="px-3 py-2 font-semibold border-b bg-blue-50 flex justify-between items-center">
+        <span>🤖 Advanced Scheduler Bot</span>
+        <button id="chatHelp" class="text-blue-600 text-sm">Examples</button>
+      </div>
+      <div id="chatLog" class="flex-1 overflow-y-auto space-y-2 p-3 text-sm bg-gray-50"></div>
+      <div class="border-t p-3 bg-white">
+        <div class="flex gap-2 mb-2">
+          <input id="chatInput" type="text"
+                 class="flex-1 border rounded px-3 py-2 text-sm"
+                 placeholder="Ask me to build schedules..." autocomplete="off" />
+          <button id="chatSend" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">Send</button>
+        </div>
+        <div class="flex gap-1 flex-wrap">
+          <button class="quick-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" 
+                  data-msg="Build schedule for today">📅 Today</button>
+          <button class="quick-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" 
+                  data-msg="Build schedule for tomorrow">📅 Tomorrow</button>
+          <button class="quick-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" 
+                  data-msg="Build full week schedule starting Monday">📅 Week</button>
+          <button class="quick-btn text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300" 
+                  data-msg="Analyze coverage for today">📊 Coverage</button>
+        </div>
       </div>
     </div>`;
 
   const log   = host.querySelector("#chatLog");
   const input = host.querySelector("#chatInput");
   const send  = host.querySelector("#chatSend");
+  const help  = host.querySelector("#chatHelp");
 
-  /* ---- tiny helper to push bubbles ---- */
+  // Show welcome message
+  addMsg("👋 I'm your advanced scheduling assistant! I can build complete schedules, analyze coverage, and handle complex scheduling rules. Try asking me to build a schedule!", "bot");
+
+  /* ---- Helper to add chat bubbles ---- */
   const addMsg = (txt, who) => {
     const el = document.createElement("div");
     el.className = who === "user" ? "text-right" : "";
-    el.innerHTML = `<span class="inline-block px-2 py-1 rounded
-                     ${who === "user" ? "bg-blue-200" : "bg-gray-200"}">
-                     ${txt}</span>`;
+    
+    const isLongMessage = txt.length > 100;
+    const bgClass = who === "user" ? "bg-blue-500 text-white" : "bg-white border";
+    
+    el.innerHTML = `<div class="inline-block px-3 py-2 rounded-lg max-w-xs ${bgClass} ${isLongMessage ? 'text-left' : ''}">
+                     ${txt.replace(/\n/g, '<br>')}</div>`;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
   };
 
-  /* ---- send message to /api/chat ---- */
+  /* ---- Quick action buttons ---- */
+  host.addEventListener('click', (e) => {
+    if (e.target.classList.contains('quick-btn')) {
+      const message = e.target.dataset.msg;
+      input.value = message;
+      send.click();
+    }
+  });
+
+  /* ---- Help/Examples dialog ---- */
+  help.onclick = () => {
+    const examples = `
+🚀 **Advanced Scheduling Commands:**
+
+**Full Schedules:**
+• "Build schedule for today"
+• "Build schedule for tomorrow" 
+• "Build full week schedule starting Monday"
+• "Generate schedule for July 15th"
+
+**Individual Shifts:**
+• "Schedule Adam for dispatch today 8am to 5pm"
+• "Add PTO for Sarah on July 20th"
+• "Move Elliott's shift to start at 9am"
+
+**Analysis:**
+• "Analyze coverage for today"
+• "Check if we have enough dispatch coverage"
+• "Show me lunch schedule conflicts"
+
+**Bulk Operations:**
+• "Replace all shifts for this week"
+• "Optimize specialist time allocation"
+• "Fix coverage violations for today"
+
+💡 **Smart Features:**
+✅ Maintains exactly 3 Reservations + 1 Dispatch
+✅ Schedules lunches in proper windows
+✅ Allocates specialist time automatically  
+✅ Follows all PTO and availability rules
+✅ Validates coverage requirements
+    `.trim();
+    
+    addMsg(examples, "bot");
+  };
+
+  /* ---- Send message to /api/chat ---- */
   async function sendChat(msg) {
     addMsg(msg, "user");
     input.value = "";
+    
+    // Show typing indicator
+    const typingEl = document.createElement("div");
+    typingEl.innerHTML = `<div class="inline-block px-3 py-2 rounded-lg bg-gray-200">
+                           <span class="animate-pulse">🤖 Building schedule...</span></div>`;
+    log.appendChild(typingEl);
+    log.scrollTop = log.scrollHeight;
 
     try {
       const res = await fetch("/api/chat", {
@@ -467,33 +614,35 @@ function initChat() {
         body:    JSON.stringify({ message: msg })
       }).then(r => r.json());
 
+      typingEl.remove();
       addMsg(res.reply || "[no reply]", "bot");
 
       /* ✅ FIXED: Update shifts with proper data transformation */
-      if ((res.reply || "").trim().toUpperCase() === "OK") {
-        if (res.shifts) {
-          // Transform shifts from Google Sheets format to frontend format
-          shifts = res.shifts.map((shift, index) => sheetsToFrontend(shift, index));
-          
-          if (res.workers) {
-            workers = res.workers;
-            empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
-          }
-        } else {
-          // Fallback: re-fetch and transform
-          const [newWorkers, rawShifts] = await Promise.all([
-            fetch("/api/workers").then(r => r.json()),
-            fetch("/api/shifts").then(r => r.json())
-          ]);
-          workers = newWorkers;
-          shifts = rawShifts.map((shift, index) => sheetsToFrontend(shift, index));
+      if (res.shifts && Array.isArray(res.shifts)) {
+        // Transform shifts from Google Sheets format to frontend format
+        shifts = res.shifts.map((shift, index) => sheetsToFrontend(shift, index));
+        
+        if (res.workers) {
+          workers = res.workers;
           empDl.innerHTML = workers.map(w => `<option value="${w.Name}">`).join("");
         }
-        draw();
+        
+        draw(); // Refresh the display
+        
+        // Show coverage analysis if it was a schedule build
+        if (msg.toLowerCase().includes('build') || msg.toLowerCase().includes('schedule')) {
+          const analysis = analyzeCoverage(iso(day));
+          if (analysis.violations.length > 0) {
+            addMsg(`⚠️ Coverage Issues Found:\n${analysis.violations.slice(0, 3).join('\n')}`, "bot");
+          } else {
+            addMsg("✅ Schedule meets all coverage requirements!", "bot");
+          }
+        }
       }
     } catch (err) {
+      typingEl.remove();
       console.error("❌ Chat error:", err);
-      addMsg("[error]", "bot");
+      addMsg("❌ Sorry, I encountered an error. Please try again.", "bot");
     }
   }
 
