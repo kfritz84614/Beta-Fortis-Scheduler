@@ -52,9 +52,12 @@ let shifts  = loadJSON(SHIFT_FILE);
 const saveWorkers = () => saveJSON(WORK_FILE, workers);
 const saveShifts  = () => saveJSON(SHIFT_FILE, shifts);
 
-const uniqueAbilities = () => {
+const uniqueAbilities = async () => {
   const s = new Set();
-  workers.forEach(w => ["Primary Ability","Secondary Ability","Tertiary Ability"].forEach(k => w[k] && s.add(w[k])));
+  (await listWorkers()).forEach(w =>
+    ["Primary Ability","Secondary Ability","Tertiary Ability"]
+      .forEach(k => w[k] && s.add(w[k]))
+  );
   s.add("Lunch");
   return [...s].sort();
 };
@@ -67,9 +70,11 @@ app.use(express.static(path.join(__dirname, "public")));
 
 /* ---------------- workers ---------------- */
 app.get("/api/workers", async (_req, res) =>
-  res.json({ workers: await listWorkers() })
+  res.json(await listWorkers())
 );
-app.get("/api/abilities", (_, res) => res.json(uniqueAbilities()));
+app.get("/api/abilities", async (_req, res) =>
+  res.json(await uniqueAbilities())
+);
 
 app.post("/api/workers/add", async (req, res) => {
   await upsertWorker(req.body);              // inserts when not found
