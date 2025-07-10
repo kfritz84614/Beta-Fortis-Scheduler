@@ -100,6 +100,8 @@ const persist = async () => {
     // ✅ FIXED: Transform shifts from frontend format to Google Sheets format
     const sheetsFormat = shifts.map(frontendToSheets);
     
+    console.log(`💾 Saving ${sheetsFormat.length} shifts to Google Sheets...`);
+    
     const response = await fetch("/api/shifts/bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,15 +109,16 @@ const persist = async () => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
 
     const result = await response.json();
-    console.log(`✅ Saved ${sheetsFormat.length} shifts to Google Sheets`);
+    console.log(`✅ Successfully saved ${sheetsFormat.length} shifts to Google Sheets`);
     return result;
   } catch (error) {
-    console.error("❌ Failed to save shifts:", error);
-    alert("Failed to save changes. Please try again.");
+    console.error("❌ Failed to save shifts to Google Sheets:", error);
+    alert("Failed to save changes to Google Sheets. Please try again.");
     throw error;
   }
 };
@@ -142,7 +145,10 @@ const deleteShift = async (id) => {
   const index = shifts.findIndex(s => s.id === id);
   if (index !== -1) {
     shifts.splice(index, 1);
+    console.log(`🗑️ Deleting shift ${id}, ${shifts.length} shifts remaining`);
     return await persist();
+  } else {
+    console.warn(`⚠️ Shift ${id} not found for deletion`);
   }
 };
 
@@ -391,13 +397,24 @@ delBtn.onclick = async () => {
     const idx = +form.index.value;
     if (Number.isNaN(idx)) return;
     
-    const { id } = shifts[idx];
-    shifts.splice(idx, 1);
-    await deleteShift(id);
+    if (!confirm('Delete this shift?')) return;
+    
+    const shiftToDelete = shifts[idx];
+    if (!shiftToDelete) {
+      console.error('Shift not found at index', idx);
+      return;
+    }
+    
+    console.log(`🗑️ Deleting shift: ${shiftToDelete.name} - ${shiftToDelete.role}`);
+    
+    // Call deleteShift which handles array removal AND Google Sheets sync
+    await deleteShift(shiftToDelete.id);
+    
     dlg.close();
     draw();
   } catch (error) {
     console.error("❌ Failed to delete shift:", error);
+    alert("Failed to delete shift. Please try again.");
   }
 };
 
