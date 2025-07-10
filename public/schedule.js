@@ -374,15 +374,63 @@ const updateCoverageDisplay = () => {
 
 /***** BLOCKS *****/
 function placeBlock(s,idx,row){
-  const band=grid.querySelectorAll(".band")[row]; if(!band) return;
-  const el=document.createElement("div"); el.className="block";
+  const band=grid.querySelectorAll(".band")[row]; 
+  if(!band) return;
+  
+  // Clear any existing blocks for this worker at this time to prevent overlaps
+  const existingBlocks = band.querySelectorAll('.block');
+  existingBlocks.forEach(block => {
+    const blockLeft = parseFloat(block.style.left);
+    const blockWidth = parseFloat(block.style.width);
+    const blockRight = blockLeft + blockWidth;
+    
+    const shiftLeft = (s.start/1440*100);
+    const shiftWidth = ((s.end-s.start)/1440*100);
+    const shiftRight = shiftLeft + shiftWidth;
+    
+    // Check for overlap
+    if (!(shiftRight <= blockLeft || shiftLeft >= blockRight)) {
+      // There's an overlap - remove the existing block
+      block.remove();
+    }
+  });
+  
+  const el=document.createElement("div"); 
+  el.className="block";
   el.style.left = `${s.start/1440*100}%`;
   el.style.width= `${(s.end-s.start)/1440*100}%`;
   el.style.background=COLORS[s.role]||"#2563eb";
-  el.textContent=`${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
+  el.style.zIndex = s.role === 'Lunch' ? '10' : '5'; // Lunch on top
+  
+  // Improve text display for small blocks
+  const duration = s.end - s.start;
+  let displayText;
+  
+  if (duration < 60) {
+    // Very short shift - just show role
+    displayText = s.role;
+  } else if (duration < 120) {
+    // Short shift - role + time
+    displayText = `${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
+  } else {
+    // Normal shift - full display
+    displayText = `${s.role} ${fmt(s.start)}-${fmt(s.end)}`;
+  }
+  
+  el.textContent = displayText;
+  el.title = `${s.name}: ${s.role} ${fmt(s.start)}-${fmt(s.end)}${s.notes ? ' - ' + s.notes : ''}`;
   el.ondblclick=()=>openDlg("edit",idx);
 
-  ["l","r"].forEach(side=>{ const h=document.createElement("span"); h.style.cssText=`position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;${side==="l"?"left:0;":"right:0;"}`; h.onmousedown=e=>startResize(e,idx,side); el.appendChild(h); });
+  // Only add resize handles for blocks wider than 60 minutes
+  if (duration >= 60) {
+    ["l","r"].forEach(side=>{ 
+      const h=document.createElement("span"); 
+      h.style.cssText=`position:absolute;top:0;bottom:0;width:6px;cursor:ew-resize;${side==="l"?"left:0;":"right:0;"}background:rgba(0,0,0,0.1);`; 
+      h.onmousedown=e=>startResize(e,idx,side); 
+      el.appendChild(h); 
+    });
+  }
+  
   el.onmousedown=e=>{ if(e.target.tagName==="SPAN") return; startMove(e,idx,row,el); };
   band.appendChild(el);
 }
