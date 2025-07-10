@@ -359,8 +359,8 @@ app.post("/api/chat", async (req, res) => {
     const toolCalls = assistantMessage.tool_calls || [];
 
     if (toolCalls.length > 0) {
-      // Handle function calls
-      const [workers, shifts] = await Promise.all([
+      // Handle function calls - get fresh data from Google Sheets
+      let [workers, shifts] = await Promise.all([
         listWorkers(),
         listShifts()
       ]);
@@ -401,6 +401,12 @@ app.post("/api/chat", async (req, res) => {
               worker.PTO.push(args.date);
               await upsertWorker(worker);
               console.log(`✅ Added PTO: ${args.name} on ${args.date}`);
+              
+              // Update local workers array to include new PTO
+              const workerIndex = workers.findIndex(w => w.Name === args.name);
+              if (workerIndex !== -1) {
+                workers[workerIndex] = worker;
+              }
             }
             break;
 
@@ -428,13 +434,13 @@ app.post("/api/chat", async (req, res) => {
         }
       }
 
-      // Log bot response and return fresh data
+      // Log bot response and return fresh data in Google Sheets format
       await addChatMessage("bot", "OK");
       
       return res.json({
         reply: "OK",
-        shifts: await listShifts(),
-        workers: await listWorkers()
+        shifts: await listShifts(),  // Fresh data from Google Sheets
+        workers: workers
       });
     }
 
