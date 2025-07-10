@@ -13,20 +13,12 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.0",
-    "openai": "^4.20.0"
+    "openai": "^4.20.0",
     "googleapis": "^118.0.0"
   },
 
-  "engines": {
-    "node": ">=18"
-  },
-
-  "keywords": [
-    "schedule",
-    "vercel",
-    "express",
-    "openai"
-  ],
+  "engines": { "node": ">=18" },
+  "keywords": [ "schedule", "vercel", "express", "openai" ],
   "author": "Fortis Dev Team",
   "license": "MIT"
 }
