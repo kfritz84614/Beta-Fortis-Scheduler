@@ -15,9 +15,12 @@ let   ptoCal   = null;                 // flatpickr instance
 /* -------------- initial load ----------------------------------- */
 (async () => {
   [workers, abilities] = await Promise.all([
-    fetch('/api/workers').then(r => r.json()),
-    fetch('/api/abilities').then(r => r.json())
-  ]);
+  fetch('/api/workers' ).then(r => r.json()),
+  fetch('/api/abilities').then(r => r.json())
+]);
+
+/* ↓ If backend ever returns {workers:[…]}, unwrap it */
+if (!Array.isArray(workers) && workers.workers) workers = workers.workers;
   if (!abilities.includes('Lunch')) abilities.push('Lunch');
   renderTable();
 })();
@@ -89,7 +92,7 @@ frm.onsubmit = async e => {
   if (mode === 'edit') workers[frm.dataset.idx] = data;
   else                 workers.push(data);
 
-  /* decide the right endpoint: new → /add   |  edit → /update */
+/* choose endpoint: new → /add   |  edit → /update */
 const url = mode === 'new'
           ? '/api/workers/add'
           : '/api/workers/update';
@@ -99,7 +102,6 @@ await fetch(url, {
   headers: { 'Content-Type': 'application/json' },
   body   : JSON.stringify(data)
 });
-
 
   dlg.close(); renderTable();
 };
