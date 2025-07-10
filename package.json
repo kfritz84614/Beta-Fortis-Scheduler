@@ -1,24 +1,50 @@
 {
   "name": "fortis-scheduler",
-  "version": "1.0.0",
-  "description": "Fortis weekly scheduling app with PTO, admin UI and OpenAI-powered assistant.",
+  "version": "2.0.0",
+  "description": "Fortis scheduling app with Google Sheets integration, PTO management, and AI-powered assistant.",
   "type": "module",
   "main": "app.js",
 
   "scripts": {
     "dev": "node app.js",
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "node -e \"import('./app.js').then(() => console.log('✅ App loads successfully'))\"",
+    "health": "curl -f http://localhost:3000/api/health || exit 1"
   },
 
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.19.0",
-    "openai": "^4.20.0",
-    "googleapis": "^118.0.0"
+    "express": "^4.19.2",
+    "googleapis": "^118.0.0",
+    "openai": "^4.20.1"
   },
 
-  "engines": { "node": ">=18" },
-  "keywords": [ "schedule", "vercel", "express", "openai" ],
+  "engines": { 
+    "node": ">=18" 
+  },
+
+  "keywords": [
+    "scheduling",
+    "google-sheets", 
+    "openai",
+    "workforce-management",
+    "pto",
+    "vercel"
+  ],
+
   "author": "Fortis Dev Team",
-  "license": "MIT"
+  "license": "MIT",
+
+  "repository": {
+    "type": "git",
+    "url": "your-repo-url-here"
+  },
+
+  "vercel": {
+    "functions": {
+      "app.js": {
+        "maxDuration": 30
+      }
+    }
+  }
 }
