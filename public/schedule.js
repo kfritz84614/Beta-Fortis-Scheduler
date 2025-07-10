@@ -659,7 +659,7 @@ dlg.addEventListener("close", () => form.reset());
 /* ==========================================================================
    ENHANCED CHAT WIDGET  
    ========================================================================== */
-// Fixed initChat function for schedule.js - replace the entire function
+// Complete, clean initChat function - replace the entire function in schedule.js
 
 function initChat() {
   const host = document.getElementById("chatBox");
@@ -704,9 +704,6 @@ function initChat() {
   const help = host.querySelector("#chatHelp");
   const quickActions = host.querySelector("#quickActions");
 
-  // Show enhanced welcome message
-  addMsg("👋 I'm your advanced scheduling assistant! I automatically fix coverage issues and build complete schedules. I can understand context like 'move Sarah's morning shift' or 'fix today's coverage problems'.", "bot");
-
   // Helper to add chat bubbles
   function addMsg(txt, who) {
     const el = document.createElement("div");
@@ -720,6 +717,9 @@ function initChat() {
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
   }
+
+  // Show enhanced welcome message
+  addMsg("👋 I'm your advanced scheduling assistant! I automatically fix coverage issues and build complete schedules. I can understand context like 'move Sarah's morning shift' or 'fix today's coverage problems'.", "bot");
 
   // Quick action buttons
   host.addEventListener('click', function(e) {
@@ -736,7 +736,7 @@ function initChat() {
     const todayShifts = shifts.filter(function(s) { return s.date === currentDate; });
     const coverage = analyzeCoverage(currentDate);
     
-    let quickActionsMenu = `
+    const quickActionsMenu = `
 🚀 **Smart Quick Actions for ${day.toDateString()}:**
 
 **Schedule Building:**
@@ -758,8 +758,7 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
 • "Sarah's morning shift" = earliest shift for Sarah today
 • "move the dispatch shift to 9am" = change dispatch start time
 • "add more reservations coverage" = increase staffing
-• "schedule lunch for the team" = add lunch breaks
-    `.trim();
+• "schedule lunch for the team" = add lunch breaks`;
     
     addMsg(quickActionsMenu, "bot");
   };
@@ -803,8 +802,7 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
 ✅ Maintain exactly 3 Reservations + 1 Dispatch  
 ✅ Schedule proper lunch breaks
 ✅ Follow all worker constraints (Antje = Journey Desk only)
-✅ Understand which shift you mean by context
-    `.trim();
+✅ Understand which shift you mean by context`;
     
     addMsg(examples, "bot");
   };
@@ -915,10 +913,7 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
   
   input.focus();
   console.log("✅ Enhanced chat initialized successfully!");
-} catch (error) {
-      console.error("❌ Manual chat initialization failed:", error);
-    }
-  }
+}
   
   // Try to draw the grid
   if (typeof draw === 'function') {
