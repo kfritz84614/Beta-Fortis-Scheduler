@@ -25,11 +25,12 @@
         <thead class="bg-slate-800 text-white">
           <tr>
             <th class="px-3 py-2 text-left">Name</th>
-            <th class="px-3 py-2 text-left">Working Hours</th>
-            <th class="px-3 py-2 text-left">Lunch Time</th>
+            <th class="px-3 py-2 text-left">Work Hours</th>
+            <th class="px-3 py-2 text-left">Lunch Hours</th>
             <th class="px-3 py-2 text-left">Primary</th>
             <th class="px-3 py-2 text-left">Secondary</th>
             <th class="px-3 py-2 text-left">Tertiary</th>
+            <th class="px-3 py-2 text-left">Specialist Hours/Week</th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -38,22 +39,82 @@
   </main>
 
   <script>
+    // Helper functions for time display
+    function formatWorkHours(worker) {
+      // Try new format first
+      if (worker.WorkStartTime && worker.WorkEndTime) {
+        return `${worker.WorkStartTime} - ${worker.WorkEndTime}`;
+      }
+      
+      // Fallback to old format
+      if (worker["Working Hours"]) {
+        const workHours = worker["Working Hours"];
+        if (workHours.includes('-')) {
+          const [start, end] = workHours.split('-');
+          // Convert HHMM to HH:MM format for display
+          const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            const cleaned = timeStr.replace(/[^\d]/g, '').padStart(4, '0');
+            return `${cleaned.slice(0, 2)}:${cleaned.slice(2)}`;
+          };
+          return `${formatTime(start)} - ${formatTime(end)}`;
+        }
+      }
+      
+      return 'Not set';
+    }
+
+    function formatLunchHours(worker) {
+      // Try new format first
+      if (worker.LunchStartTime && worker.LunchEndTime) {
+        return `${worker.LunchStartTime} - ${worker.LunchEndTime}`;
+      }
+      
+      // Fallback to old format
+      if (worker["Lunch Time"] && worker["Lunch Time"] !== "None") {
+        const lunchTime = worker["Lunch Time"];
+        if (lunchTime.includes('-')) {
+          const [start, end] = lunchTime.split('-');
+          // Convert HHMM to HH:MM format for display
+          const formatTime = (timeStr) => {
+            if (!timeStr) return '';
+            const cleaned = timeStr.replace(/[^\d]/g, '').padStart(4, '0');
+            return `${cleaned.slice(0, 2)}:${cleaned.slice(2)}`;
+          };
+          return `${formatTime(start)} - ${formatTime(end)}`;
+        }
+      }
+      
+      return 'Not set';
+    }
+
+    function getSpecialistHours(worker) {
+      return worker.TargetNumber || worker["Target Number of Time not on Dispatch or Reservations"] || '0';
+    }
+
     fetch('/api/workers')
       .then(res => res.json())
       .then(data => {
         const tbody = document.querySelector('#schedule-table tbody');
         data.forEach(worker => {
           const row = document.createElement('tr');
+          row.className = 'hover:bg-gray-50';
           row.innerHTML = `
-            <td class="border px-3 py-1">${worker.Name}</td>
-            <td class="border px-3 py-1">${worker["Working Hours"]}</td>
-            <td class="border px-3 py-1">${worker["Lunch Time"]}</td>
-            <td class="border px-3 py-1">${worker["Primary Ability"]}</td>
-            <td class="border px-3 py-1">${worker["Secondary Ability"]}</td>
-            <td class="border px-3 py-1">${worker["Tertiary Ability"]}</td>
+            <td class="border px-3 py-2 font-medium">${worker.Name}</td>
+            <td class="border px-3 py-2">${formatWorkHours(worker)}</td>
+            <td class="border px-3 py-2">${formatLunchHours(worker)}</td>
+            <td class="border px-3 py-2">${worker["Primary Ability"] || '-'}</td>
+            <td class="border px-3 py-2">${worker["Secondary Ability"] || '-'}</td>
+            <td class="border px-3 py-2">${worker["Tertiary Ability"] || '-'}</td>
+            <td class="border px-3 py-2 text-center">${getSpecialistHours(worker)}</td>
           `;
           tbody.appendChild(row);
         });
+      })
+      .catch(error => {
+        console.error('Error loading workers:', error);
+        const tbody = document.querySelector('#schedule-table tbody');
+        tbody.innerHTML = '<tr><td colspan="7" class="border px-3 py-2 text-center text-red-600">Error loading worker data</td></tr>';
       });
   </script>
 </body>
