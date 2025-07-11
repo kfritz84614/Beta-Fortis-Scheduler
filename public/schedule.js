@@ -1,10 +1,9 @@
-// public/schedule.js – Enhanced with Advanced Scheduling Bot
+// public/schedule.js – Enhanced with Week View and Fixed Date Handling
 // -----------------------------------------------------------------------------
-// • Advanced chat interface with scheduling examples
-// • Support for full day/week schedule generation
-// • Coverage analysis and validation display
-// • Smart scheduling suggestions
-// • Robust error handling and data transformation
+// • Fixed date synchronization between bot and frontend
+// • Full week view implementation with day/week toggle
+// • Improved shift placement and display
+// • Better error handling and data transformation
 // -----------------------------------------------------------------------------
 
 /***** CONFIG *****/
@@ -26,7 +25,22 @@ const COLORS = {
 const hh    = h => `${String(h).padStart(2, "0")}:00`;
 const fmt   = m => `${String((m/60)|0).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const toMin = t => { if(!t) return 0; const d=t.replace(/[^0-9]/g,"").padStart(4,"0"); return +d.slice(0,2)*60+ +d.slice(2); };
-const iso   = d => d.toISOString().slice(0,10);
+
+// 🔧 FIXED: Consistent date handling to prevent day shifting
+const iso = d => {
+  // Ensure we're working with local date, not UTC
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Helper to parse date strings consistently
+const parseDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day); // month is 0-indexed
+};
 
 const hasPTO = (name,dateISO) => { const w=workers.find(w=>w.Name===name); return w?.PTO?.includes(dateISO); };
 
@@ -112,16 +126,62 @@ const analyzeCoverage = (date) => {
 
 /***** STATE *****/
 let workers=[], abilities=[], shifts=[];
-let day = location.hash ? new Date(location.hash.slice(1)) : new Date();
+let day = location.hash ? parseDate(location.hash.slice(1)) : new Date();
+let currentView = 'day'; // 'day' or 'week'
+let weekStart = new Date(); // Monday of current week
 
 /***** DOM *****/
-const grid     = document.getElementById("grid");
-const wrap     = document.getElementById("wrap");
-const dateH    = document.getElementById("date");
-const prevBtn  = document.getElementById("prev");
-const nextBtn  = document.getElementById("next");
-const todayBtn = document.getElementById("todayBtn");
-const empDl    = document.getElementById("workerList");
+const dayView    = document.getElementById("dayView");
+const weekView   = document.getElementById("weekView");
+const wrap       = document.getElementById("wrap");
+const dateH      = document.getElementById("date");
+const prevBtn    = document.getElementById("prev");
+const nextBtn    = document.getElementById("next");
+const todayBtn   = document.getElementById("todayBtn");
+const dayViewBtn = document.getElementById("dayViewBtn");
+const weekViewBtn= document.getElementById("weekViewBtn");
+const empDl      = document.getElementById("workerList");
+
+/***** VIEW TOGGLE *****/
+const setView = (view) => {
+  currentView = view;
+  
+  if (view === 'day') {
+    dayView.classList.remove('hidden');
+    weekView.classList.add('hidden');
+    dayViewBtn.classList.add('active');
+    weekViewBtn.classList.remove('active');
+    draw();
+  } else {
+    dayView.classList.add('hidden');
+    weekView.classList.remove('hidden');
+    dayViewBtn.classList.remove('active');
+    weekViewBtn.classList.add('active');
+    drawWeek();
+  }
+};
+
+dayViewBtn.onclick = () => setView('day');
+weekViewBtn.onclick = () => setView('week');
+
+/***** WEEK NAVIGATION HELPERS *****/
+const getMonday = (date) => {
+  const d = new Date(date);
+  const dayOfWeek = d.getDay();
+  const diff = d.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // adjust when day is sunday
+  d.setDate(diff);
+  return d;
+};
+
+const getWeekDates = (mondayDate) => {
+  const dates = [];
+  for (let i = 0; i < 5; i++) { // Monday to Friday
+    const date = new Date(mondayDate);
+    date.setDate(mondayDate.getDate() + i);
+    dates.push(date);
+  }
+  return dates;
+};
 
 /***** INIT WITH ROBUST ERROR HANDLING *****/
 (async()=>{
@@ -219,13 +279,12 @@ const empDl    = document.getElementById("workerList");
       console.warn("⚠️ Worker dropdown not populated");
     }
     
-    // Draw the schedule
-    if (typeof draw === 'function') {
-      draw();
-      console.log("✅ Schedule drawn");
-    } else {
-      console.error("❌ Draw function not available");
-    }
+    // Set week start to current week's Monday
+    weekStart = getMonday(day);
+    
+    // Draw the initial view
+    setView('day'); // Start with day view
+    console.log("✅ Schedule drawn");
     
     // Initialize chat
     console.log("6️⃣ Initializing chat...");
@@ -248,12 +307,10 @@ const empDl    = document.getElementById("workerList");
     alert(`Critical error during initialization: ${error.message}\n\nPlease check:\n1. Google Sheets permissions\n2. Environment variables\n3. Browser console for details`);
     
     // Try to at least show the UI
-    if (typeof draw === 'function') {
-      try {
-        draw();
-      } catch (drawError) {
-        console.error("Even basic UI drawing failed:", drawError);
-      }
+    try {
+      setView('day');
+    } catch (drawError) {
+      console.error("Even basic UI drawing failed:", drawError);
     }
   }
 })();
@@ -261,7 +318,7 @@ const empDl    = document.getElementById("workerList");
 /***** PERSIST (Google Sheets) *****/
 const persist = async () => {
   try {
-    // ✅ FIXED: Transform shifts from frontend format to Google Sheets format
+    // Transform shifts from frontend format to Google Sheets format
     const sheetsFormat = shifts.map(frontendToSheets);
     
     console.log(`💾 Saving ${sheetsFormat.length} shifts to Google Sheets...`);
@@ -316,31 +373,38 @@ const deleteShift = async (id) => {
   }
 };
 
-/***** GRID RENDER *****/
+/***** DAY VIEW RENDER *****/
 function firstStart(n){ const f=shifts.filter(s=>s.name===n&&s.date===iso(day)).sort((a,b)=>a.start-b.start)[0]; return f?f.start:1441; }
+
 function draw(){
+  if (currentView !== 'day') return;
+  
   const sorted=[...workers].sort((a,b)=>{ const sa=firstStart(a.Name), sb=firstStart(b.Name); return sa!==sb?sa-sb:a.Name.localeCompare(b.Name); });
   const rowOf=Object.fromEntries(sorted.map((w,i)=>[w.Name,i]));
-  grid.innerHTML="";
-  grid.style.gridTemplateRows=`30px repeat(${sorted.length},30px)`;
+  
+  dayView.innerHTML="";
+  dayView.className = "day-grid";
+  dayView.style.gridTemplateRows=`30px repeat(${sorted.length},30px)`;
 
-  grid.appendChild(lbl(""));
-  for(let h=0;h<24;h++) grid.appendChild(lbl(hh(h),1,h+2));
+  dayView.appendChild(lbl(""));
+  for(let h=0;h<24;h++) dayView.appendChild(lbl(hh(h),1,h+2));
 
   sorted.forEach((w,r)=>{
     const pto=hasPTO(w.Name,iso(day));
-    const label=lbl(w.Name,r+2,1); if(pto) label.style.background="#e5e7eb"; grid.appendChild(label);
-    for(let h=0;h<24;h++){ const c=cell(r+2,h+2,{row:r,hour:h}); if(pto) c.style.background="#f9fafb"; grid.appendChild(c);}   
-    const band=document.createElement("div"); band.className="band"; band.style.gridRow=r+2; if(pto) band.style.background="rgba(0,0,0,.05)"; grid.appendChild(band);
+    const label=lbl(w.Name,r+2,1); if(pto) label.style.background="#e5e7eb"; dayView.appendChild(label);
+    for(let h=0;h<24;h++){ const c=cell(r+2,h+2,{row:r,hour:h}); if(pto) c.style.background="#f9fafb"; dayView.appendChild(c);}   
+    const band=document.createElement("div"); band.className="band day-band"; band.style.gridRow=r+2; if(pto) band.style.background="rgba(0,0,0,.05)"; dayView.appendChild(band);
   });
 
-  // ✅ FIXED: Filter shifts for current day and place blocks
+  // Filter shifts for current day and place blocks
   const todayShifts = shifts.filter(s => s.date === iso(day));
+  console.log(`🔍 Drawing ${todayShifts.length} shifts for ${iso(day)}`);
+  
   todayShifts.forEach(shift => {
     const shiftIndex = shifts.findIndex(s => s.id === shift.id);
     const rowIndex = rowOf[shift.name];
     if (rowIndex !== undefined) {
-      placeBlock(shift, shiftIndex, rowIndex);
+      placeBlock(shift, shiftIndex, rowIndex, dayView);
     }
   });
 
@@ -351,11 +415,131 @@ function draw(){
   updateCoverageDisplay();
 }
 
+/***** WEEK VIEW RENDER *****/
+function drawWeek() {
+  if (currentView !== 'week') return;
+  
+  const weekDates = getWeekDates(weekStart);
+  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  
+  // Update week headers
+  weekDates.forEach((date, index) => {
+    const headerEl = document.getElementById(`weekDay${index}`);
+    const contentEl = document.getElementById(`weekContent${index}`);
+    
+    if (headerEl && contentEl) {
+      const analysis = analyzeCoverage(iso(date));
+      let statusIcon = "✅";
+      if (analysis.violations.length > 0) statusIcon = "❌";
+      else if (analysis.warnings.length > 0) statusIcon = "⚠️";
+      
+      headerEl.innerHTML = `${dayNames[index]}<br><small>${date.getMonth() + 1}/${date.getDate()} ${statusIcon}</small>`;
+      
+      // Clear previous content
+      contentEl.innerHTML = '';
+      contentEl.style.position = 'relative';
+    }
+  });
+  
+  // Clear and rebuild worker rows
+  const existingWorkerRows = weekView.querySelectorAll('.week-worker-row');
+  existingWorkerRows.forEach(row => row.remove());
+  
+  // Sort workers by first shift start time across the week
+  const sorted = [...workers].sort((a, b) => {
+    const weekShiftsA = shifts.filter(s => 
+      weekDates.some(d => iso(d) === s.date) && s.name === a.Name
+    );
+    const weekShiftsB = shifts.filter(s => 
+      weekDates.some(d => iso(d) === s.date) && s.name === b.Name
+    );
+    
+    const firstA = weekShiftsA.length > 0 ? Math.min(...weekShiftsA.map(s => s.start)) : 1441;
+    const firstB = weekShiftsB.length > 0 ? Math.min(...weekShiftsB.map(s => s.start)) : 1441;
+    
+    return firstA !== firstB ? firstA - firstB : a.Name.localeCompare(b.Name);
+  });
+  
+  // Add worker rows
+  sorted.forEach((worker, rowIndex) => {
+    // Worker name label
+    const workerLabel = document.createElement('div');
+    workerLabel.className = 'rowLabel week-worker-row';
+    workerLabel.style.gridRow = rowIndex + 2;
+    workerLabel.style.gridColumn = '1';
+    workerLabel.textContent = worker.Name;
+    
+    // Check if worker has PTO any day this week
+    const hasPTOThisWeek = weekDates.some(date => hasPTO(worker.Name, iso(date)));
+    if (hasPTOThisWeek) {
+      workerLabel.style.background = '#e5e7eb';
+    }
+    
+    weekView.appendChild(workerLabel);
+    
+    // Day columns for this worker
+    weekDates.forEach((date, dayIndex) => {
+      const dayColumn = document.createElement('div');
+      dayColumn.className = 'week-day-cell week-worker-row';
+      dayColumn.style.gridRow = rowIndex + 2;
+      dayColumn.style.gridColumn = dayIndex + 2;
+      dayColumn.style.borderRight = '1px solid #e5e7eb';
+      dayColumn.style.borderBottom = '1px solid #e5e7eb';
+      dayColumn.style.minHeight = '60px';
+      dayColumn.style.position = 'relative';
+      dayColumn.style.padding = '2px';
+      
+      if (hasPTO(worker.Name, iso(date))) {
+        dayColumn.style.background = '#f9fafb';
+        const ptoLabel = document.createElement('div');
+        ptoLabel.textContent = 'PTO';
+        ptoLabel.style.cssText = 'font-size: 0.6rem; color: #6b7280; text-align: center; padding: 4px;';
+        dayColumn.appendChild(ptoLabel);
+      } else {
+        // Add shifts for this worker on this day
+        const dayShifts = shifts.filter(s => s.date === iso(date) && s.name === worker.Name);
+        dayShifts.forEach((shift, shiftIndex) => {
+          const shiftBlock = document.createElement('div');
+          shiftBlock.className = 'week-block';
+          shiftBlock.style.background = COLORS[shift.role] || '#2563eb';
+          shiftBlock.style.top = `${shiftIndex * 16}px`;
+          shiftBlock.style.height = '14px';
+          shiftBlock.textContent = `${shift.role} ${fmt(shift.start)}-${fmt(shift.end)}`;
+          shiftBlock.title = `${shift.name}: ${shift.role} ${fmt(shift.start)}-${fmt(shift.end)}${shift.notes ? ' - ' + shift.notes : ''}`;
+          
+          // Make clickable to edit
+          shiftBlock.onclick = () => {
+            const shiftIndex = shifts.findIndex(s => s.id === shift.id);
+            if (shiftIndex !== -1) {
+              // Switch to day view and show this day
+              day = new Date(date);
+              setView('day');
+              openDlg('edit', shiftIndex);
+            }
+          };
+          
+          dayColumn.appendChild(shiftBlock);
+        });
+      }
+      
+      weekView.appendChild(dayColumn);
+    });
+  });
+  
+  // Update date header for week view
+  const startDate = weekStart.toLocaleDateString();
+  const endDate = weekDates[4].toLocaleDateString();
+  dateH.textContent = `Week of ${startDate} - ${endDate}`;
+  location.hash = iso(weekStart);
+}
+
 const lbl=(t,r=1,c=1)=>{ const d=document.createElement("div"); d.className="rowLabel"; d.textContent=t; d.style.gridRow=r; d.style.gridColumn=c; return d; };
 const cell=(r,c,ds={})=>{ const d=document.createElement("div"); d.className="cell"; d.style.gridRow=r; d.style.gridColumn=c; Object.assign(d.dataset,ds); return d; };
 
 // Update coverage display
 const updateCoverageDisplay = () => {
+  if (currentView !== 'day') return;
+  
   const currentDate = iso(day);
   const analysis = analyzeCoverage(currentDate);
   
@@ -373,8 +557,8 @@ const updateCoverageDisplay = () => {
 };
 
 /***** BLOCKS *****/
-function placeBlock(s,idx,row){
-  const band=grid.querySelectorAll(".band")[row]; 
+function placeBlock(s,idx,row,container){
+  const band = container.querySelectorAll(".band")[row]; 
   if(!band) return;
   
   // Clear any existing blocks for this worker at this time to prevent overlaps
@@ -447,7 +631,7 @@ function startResize(e, idx, side) {
 }
 function doResize(e) {
   if (!rs) return;
-  const px = grid.querySelector(".band").getBoundingClientRect().width / 1440;
+  const px = dayView.querySelector(".band").getBoundingClientRect().width / 1440;
   const diff = Math.round((e.clientX - rs.startX) / px / STEP) * STEP;
   const s = shifts[rs.idx];
   if (rs.side === "l") s.start = Math.max(0, Math.min(s.end - STEP, rs.orig.start + diff));
@@ -478,9 +662,9 @@ function doMove(e) {
     mv.preview = mv.origEl.cloneNode(true);
     mv.preview.style.opacity = 0.5;
     mv.preview.style.pointerEvents = "none";
-    grid.appendChild(mv.preview);
+    dayView.appendChild(mv.preview);
   }
-  const px = grid.querySelector(".band").getBoundingClientRect().width / 1440;
+  const px = dayView.querySelector(".band").getBoundingClientRect().width / 1440;
   const diff = Math.round((e.clientX - mv.startX) / px / STEP) * STEP;
   let st = shifts[mv.idx].start + diff;
   let en = shifts[mv.idx].end + diff;
@@ -507,7 +691,7 @@ function endMove(e) {
     return;
   }
 
-  const bandW = grid.querySelector(".band").getBoundingClientRect().width;
+  const bandW = dayView.querySelector(".band").getBoundingClientRect().width;
   const px = bandW / 1440;
   const diff = Math.round((e.clientX - mv.startX) / px / STEP) * STEP;
   const s = shifts[mv.idx];
@@ -518,36 +702,44 @@ function endMove(e) {
 
   mv.preview.remove();
   mv = null;
-  saveShift(s).then(draw);
+  saveShift(s).then(() => {
+    if (currentView === 'day') draw();
+  });
 }
 
 /* ==========================================================================
-   DRAG‑CREATE
+   DRAG‑CREATE (Day View Only)
    ========================================================================== */
 let dc = null; // {row,start,box}
-grid.onmousedown = e => {
-  if (!e.target.dataset.hour) return;
-  dc = { row: +e.target.dataset.row, start: +e.target.dataset.hour * 60 };
-  dc.box = document.createElement("div");
-  dc.box.className = "dragBox";
-  grid.querySelectorAll(".band")[dc.row].appendChild(dc.box);
-};
-grid.onmousemove = e => {
-  if (!dc || +e.target.dataset.row !== dc.row || !e.target.dataset.hour) return;
-  const end = (+e.target.dataset.hour + 1) * 60;
-  dc.box.style.left = `${(dc.start / 1440) * 100}%`;
-  dc.box.style.width = `${(Math.max(STEP, end - dc.start) / 1440) * 100}%`;
-};
-grid.onmouseup = () => {
-  if (!dc) return;
-  const duration = (parseFloat(dc.box.style.width) / 100) * 1440;
-  openDlg("new", null, {
-    row: dc.row,
-    start: dc.start,
-    end: dc.start + Math.round(duration / STEP) * STEP
-  });
-  dc.box.remove();
-  dc = null;
+
+// Add event listeners only to day view
+const setupDayViewEvents = () => {
+  dayView.onmousedown = e => {
+    if (!e.target.dataset.hour) return;
+    dc = { row: +e.target.dataset.row, start: +e.target.dataset.hour * 60 };
+    dc.box = document.createElement("div");
+    dc.box.className = "dragBox";
+    dayView.querySelectorAll(".band")[dc.row].appendChild(dc.box);
+  };
+  
+  dayView.onmousemove = e => {
+    if (!dc || +e.target.dataset.row !== dc.row || !e.target.dataset.hour) return;
+    const end = (+e.target.dataset.hour + 1) * 60;
+    dc.box.style.left = `${(dc.start / 1440) * 100}%`;
+    dc.box.style.width = `${(Math.max(STEP, end - dc.start) / 1440) * 100}%`;
+  };
+  
+  dayView.onmouseup = () => {
+    if (!dc) return;
+    const duration = (parseFloat(dc.box.style.width) / 100) * 1440;
+    openDlg("new", null, {
+      row: dc.row,
+      start: dc.start,
+      end: dc.start + Math.round(duration / STEP) * STEP
+    });
+    dc.box.remove();
+    dc = null;
+  };
 };
 
 /* ==========================================================================
@@ -599,13 +791,15 @@ form.onsubmit = async e => {
   
   try {
     const idx = form.index.value ? +form.index.value : null;
+    const targetDate = currentView === 'day' ? iso(day) : iso(day); // TODO: handle week view date selection
+    
     const shift = {
       id: idx != null ? shifts[idx].id : undefined,
       name: empIn.value.trim(),
       role: roleSel.value,
       start: toMin(startI.value),
       end: toMin(endI.value),
-      date: iso(day),
+      date: targetDate,
       notes: notesI.value.trim()
     };
 
@@ -617,7 +811,12 @@ form.onsubmit = async e => {
 
     await saveShift(shift);
     dlg.close();
-    draw();
+    
+    if (currentView === 'day') {
+      draw();
+    } else {
+      drawWeek();
+    }
   } catch (error) {
     console.error("❌ Failed to save shift:", error);
     // Don't close dialog so user can try again
@@ -644,7 +843,12 @@ delBtn.onclick = async () => {
     await deleteShift(shiftToDelete.id);
     
     dlg.close();
-    draw();
+    
+    if (currentView === 'day') {
+      draw();
+    } else {
+      drawWeek();
+    }
   } catch (error) {
     console.error("❌ Failed to delete shift:", error);
     alert("Failed to delete shift. Please try again.");
@@ -659,8 +863,6 @@ dlg.addEventListener("close", () => form.reset());
 /* ==========================================================================
    ENHANCED CHAT WIDGET  
    ========================================================================== */
-// Complete, clean initChat function - replace the entire function in schedule.js
-
 function initChat() {
   const host = document.getElementById("chatBox");
   if (!host) {
@@ -732,12 +934,12 @@ function initChat() {
 
   // Quick Actions Menu
   quickActions.onclick = function() {
-    const currentDate = iso(day);
+    const currentDate = currentView === 'day' ? iso(day) : iso(weekStart);
     const todayShifts = shifts.filter(function(s) { return s.date === currentDate; });
     const coverage = analyzeCoverage(currentDate);
     
     const quickActionsMenu = `
-🚀 **Smart Quick Actions for ${day.toDateString()}:**
+🚀 **Smart Quick Actions for ${currentView === 'day' ? day.toDateString() : 'Current Week'}:**
 
 **Schedule Building:**
 • "Build complete schedule for today" - Full day coverage
@@ -751,7 +953,7 @@ function initChat() {
 • "Add evening coverage" - Extend hours past 5pm
 
 **Current Context:**
-📊 Shifts today: ${todayShifts.length}
+📊 Shifts ${currentView === 'day' ? 'today' : 'this week'}: ${todayShifts.length}
 ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}` : '✅ Coverage: Good'}
 
 **Smart References I Understand:**
@@ -820,15 +1022,18 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
     log.scrollTop = log.scrollHeight;
 
     try {
+      const contextDate = currentView === 'day' ? iso(day) : iso(weekStart);
+      
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           message: msg,
           context: {
-            currentDate: iso(day),
-            currentShifts: shifts.filter(function(s) { return s.date === iso(day); }).length,
-            hasViolations: analyzeCoverage(iso(day)).violations.length > 0
+            currentDate: contextDate,
+            currentView: currentView,
+            currentShifts: shifts.filter(function(s) { return s.date === contextDate; }).length,
+            hasViolations: analyzeCoverage(contextDate).violations.length > 0
           }
         })
       });
@@ -855,11 +1060,16 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
           }
         }
         
-        draw(); // Refresh the display
+        // Refresh the display based on current view
+        if (currentView === 'day') {
+          draw();
+        } else {
+          drawWeek();
+        }
         
         // Show success feedback
         if (shifts.length !== oldShiftCount) {
-          const analysis = analyzeCoverage(iso(day));
+          const analysis = analyzeCoverage(contextDate);
           if (analysis.violations.length === 0) {
             addMsg("🎯 Perfect! All coverage requirements are now met.", "bot");
           } else {
@@ -914,20 +1124,39 @@ ${coverage.violations.length > 0 ? `⚠️ Issues: ${coverage.violations.length}
   input.focus();
   console.log("✅ Enhanced chat initialized successfully!");
 }
-  
-  // Try to draw the grid
-  if (typeof draw === 'function') {
-    try {
-      draw();
-      console.log("✅ Manual draw successful");
-    } catch (error) {
-      console.error("❌ Manual draw failed:", error);
-    }
-  };
 
 /* ==========================================================================
-   NAVIGATION BUTTONS
+   NAVIGATION BUTTONS - Updated for Week View
    ========================================================================== */
-prevBtn.onclick  = () => { day.setDate(day.getDate() - 1); draw(); };
-nextBtn.onclick  = () => { day.setDate(day.getDate() + 1); draw(); };
-todayBtn.onclick = () => { day = new Date(); draw(); };
+prevBtn.onclick = () => {
+  if (currentView === 'day') {
+    day.setDate(day.getDate() - 1);
+    draw();
+  } else {
+    weekStart.setDate(weekStart.getDate() - 7);
+    drawWeek();
+  }
+};
+
+nextBtn.onclick = () => {
+  if (currentView === 'day') {
+    day.setDate(day.getDate() + 1);
+    draw();
+  } else {
+    weekStart.setDate(weekStart.getDate() + 7);
+    drawWeek();
+  }
+};
+
+todayBtn.onclick = () => {
+  day = new Date();
+  weekStart = getMonday(day);
+  if (currentView === 'day') {
+    draw();
+  } else {
+    drawWeek();
+  }
+};
+
+// Set up day view events after everything is loaded
+setTimeout(setupDayViewEvents, 100);
