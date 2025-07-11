@@ -8,7 +8,7 @@
 
   <!-- Tailwind tweaks for the schedule grid -->
   <style>
-    /* Day‑view grid: 150 px fixed name column + 24 equal hour columns */
+    /* Day‑view grid: 150 px fixed name column + 24 equal hour columns */
     .day-grid {
       display: grid;
       grid-template-columns: 150px repeat(24, 1fr);
@@ -35,6 +35,43 @@
       padding-left: 2px;
       border-radius: 2px;
     }
+
+    .rowLabel {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 500;
+      font-size: 0.875rem;
+    }
+
+    .cell {
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      cursor: crosshair;
+    }
+
+    .cell:hover {
+      background: #f1f5f9;
+    }
+
+    .dragBox {
+      position: absolute;
+      background: rgba(59, 130, 246, 0.3);
+      border: 2px dashed #3b82f6;
+      height: 100%;
+      z-index: 100;
+    }
+
+    .quick-btn:hover {
+      transform: translateY(-1px);
+      transition: transform 0.1s ease;
+    }
+
+    #dayBtn.bg-blue-600, #weekBtn.bg-blue-600 {
+      background-color: #2563eb !important;
+    }
   </style>
 </head>
 <body class="flex h-screen text-sm text-gray-800">
@@ -43,21 +80,96 @@
     <!-- navbar -->
     <nav class="mb-4 flex items-center gap-6">
       <span class="text-lg font-semibold">Schedule</span>
-      <a href="/workers.html" class="text-blue-600 hover:underline">Workers</a>
-      <a href="/admin.html"   class="text-blue-600 hover:underline">Admin</a>
+      <a href="/" class="text-blue-600 hover:underline">Workers</a>
+      <a href="/admin.html" class="text-blue-600 hover:underline">Admin</a>
 
       <div class="ml-auto flex gap-2">
-        <button id="dayBtn"   class="px-3 py-1 rounded-lg bg-blue-600 text-white">Day View</button>
-        <button id="weekBtn"  class="px-3 py-1 rounded-lg bg-gray-200">Week View</button>
+        <button id="dayBtn" class="px-3 py-1 rounded-lg bg-blue-600 text-white">Day View</button>
+        <button id="weekBtn" class="px-3 py-1 rounded-lg bg-gray-200">Week View</button>
+      </div>
+
+      <div class="flex gap-2">
+        <button id="prevBtn" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300">←</button>
+        <button id="todayBtn" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300">Today</button>
+        <button id="nextBtn" class="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300">→</button>
       </div>
     </nav>
 
-    <!-- schedule canvases injected by schedule.js -->
-    <div id="scheduleCanvas"></div>
+    <!-- Date display -->
+    <div class="mb-4">
+      <h2 id="dateH" class="text-xl font-bold"></h2>
+    </div>
+
+    <!-- Day View -->
+    <div id="dayView" class="mb-6">
+      <!-- Day view content will be injected by JavaScript -->
+    </div>
+
+    <!-- Week View -->
+    <div id="weekView" class="week-grid hidden">
+      <!-- Week headers -->
+      <div class="rowLabel"></div>
+      <div id="weekDay0" class="rowLabel text-center font-semibold bg-blue-50"></div>
+      <div id="weekDay1" class="rowLabel text-center font-semibold bg-blue-50"></div>
+      <div id="weekDay2" class="rowLabel text-center font-semibold bg-blue-50"></div>
+      <div id="weekDay3" class="rowLabel text-center font-semibold bg-blue-50"></div>
+      <div id="weekDay4" class="rowLabel text-center font-semibold bg-blue-50"></div>
+      
+      <!-- Week content containers -->
+      <div id="weekContent0" class="week-content"></div>
+      <div id="weekContent1" class="week-content"></div>
+      <div id="weekContent2" class="week-content"></div>
+      <div id="weekContent3" class="week-content"></div>
+      <div id="weekContent4" class="week-content"></div>
+    </div>
   </div>
 
   <!-- 🤖 Right: scheduling bot column -->
   <div id="chatBox" class="w-80 border-l border-gray-200 h-full flex flex-col"></div>
+
+  <!-- Shift Dialog -->
+  <dialog id="shiftDlg" class="w-full max-w-md rounded shadow">
+    <form id="shiftForm" method="dialog" class="p-6 space-y-4">
+      <input type="hidden" name="index" value="">
+      
+      <h2 class="text-xl font-bold">Edit Shift</h2>
+      
+      <div class="space-y-4">
+        <label class="block">
+          Worker
+          <input id="empSel" list="workerList" required class="w-full p-2 border rounded">
+          <datalist id="workerList"></datalist>
+        </label>
+        
+        <label class="block">
+          Role
+          <select id="roleSel" required class="w-full p-2 border rounded"></select>
+        </label>
+        
+        <div class="grid grid-cols-2 gap-4">
+          <label class="block">
+            Start Time
+            <input id="start" type="time" required class="w-full p-2 border rounded">
+          </label>
+          <label class="block">
+            End Time
+            <input id="end" type="time" required class="w-full p-2 border rounded">
+          </label>
+        </div>
+        
+        <label class="block">
+          Notes
+          <input id="notes" class="w-full p-2 border rounded">
+        </label>
+      </div>
+      
+      <div class="flex justify-end gap-3 pt-2">
+        <button type="submit" class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
+        <button id="del" type="button" class="bg-red-600 text-white px-4 py-1 rounded hidden">Delete</button>
+        <button id="cancel" type="button" class="bg-gray-400 text-white px-4 py-1 rounded">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="/schedule.js"></script>
 </body>
