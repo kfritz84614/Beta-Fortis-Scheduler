@@ -1,9 +1,10 @@
-// app.js — Fortis Scheduler backend ✨ ADVANCED SCHEDULING BOT
+// app.js — Fortis Scheduler backend ✨ UPDATED FOR NEW COLUMN STRUCTURE
 // -----------------------------------------------------------------------------
 // • Enhanced OpenAI integration with complex scheduling rules
 // • Full day/week schedule generation capabilities  
 // • Coverage validation and optimization
 // • Specialist time allocation logic
+// • NEW: Support for separate time columns
 // -----------------------------------------------------------------------------
 
 import express from "express";
@@ -37,6 +38,14 @@ app.use(express.static(path.join(__dirname, "public")));
 // Convert time string to minutes from midnight
 const toMinutes = (timeString) => {
   if (!timeString) return 0;
+  
+  // Handle HH:MM format
+  if (timeString.includes(':')) {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    return hours * 60 + minutes;
+  }
+  
+  // Handle HHMM format (legacy)
   const cleaned = timeString.replace(/[^0-9]/g, "").padStart(4, "0");
   return parseInt(cleaned.slice(0, 2)) * 60 + parseInt(cleaned.slice(2));
 };
@@ -53,6 +62,60 @@ const getDateString = (dayOffset = 0) => {
   const date = new Date();
   date.setDate(date.getDate() + dayOffset);
   return date.toISOString().slice(0, 10);
+};
+
+// Get working hours using new column structure with fallback
+const getWorkingHours = (worker) => {
+  console.log(`👤 ${worker.Name}:`);
+  
+  // Try new format first
+  if (worker.WorkStartTime && worker.WorkEndTime) {
+    const start = toMinutes(worker.WorkStartTime);
+    const end = toMinutes(worker.WorkEndTime);
+    console.log(`   New format: ${worker.WorkStartTime} - ${worker.WorkEndTime} (${start}-${end} minutes)`);
+    return { start, end };
+  }
+  
+  // Fallback to old format during migration
+  if (worker["Working Hours"]) {
+    const workHours = worker["Working Hours"];
+    if (workHours.includes('-')) {
+      const [startStr, endStr] = workHours.split('-');
+      const start = toMinutes(startStr);
+      const end = toMinutes(endStr);
+      console.log(`   Old format: ${workHours} → ${toTimeString(start)} - ${toTimeString(end)} (${start}-${end} minutes)`);
+      return { start, end };
+    }
+  }
+  
+  console.warn(`   ⚠️ No valid working hours found, using defaults`);
+  return { start: 450, end: 1020 }; // Default 7:30-17:00
+};
+
+// Get lunch hours using new column structure with fallback
+const getLunchHours = (worker) => {
+  // Try new format first
+  if (worker.LunchStartTime && worker.LunchEndTime) {
+    const start = toMinutes(worker.LunchStartTime);
+    const end = toMinutes(worker.LunchEndTime);
+    console.log(`   Lunch: ${worker.LunchStartTime} - ${worker.LunchEndTime}`);
+    return { start, end };
+  }
+  
+  // Fallback to old format during migration
+  if (worker["Lunch Time"] && worker["Lunch Time"] !== "None") {
+    const lunchTime = worker["Lunch Time"];
+    if (lunchTime.includes('-')) {
+      const [startStr, endStr] = lunchTime.split('-');
+      const start = toMinutes(startStr);
+      const end = toMinutes(endStr);
+      console.log(`   Lunch (old): ${lunchTime} → ${toTimeString(start)} - ${toTimeString(end)}`);
+      return { start, end };
+    }
+  }
+  
+  // Return null for no lunch or invalid format
+  return null;
 };
 
 // Validate coverage requirements
@@ -94,331 +157,265 @@ const validateCoverage = (shifts, date) => {
   return violations;
 };
 
-// Enhanced generateDaySchedule function for app.js
-// This replaces the existing generateDaySchedule function
-
+// Generate schedule for a specific date - UPDATED for new column structure
 const generateDaySchedule = async (date, workers) => {
   const shifts = [];
   const dayOfWeek = new Date(date).getDay(); // 0 = Sunday, 1 = Monday, etc.
   
+  console.log(`🏗️ Building complete schedule for ${date} (${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dayOfWeek]})`);
+  
   // Skip weekends for now
   if (dayOfWeek === 0 || dayOfWeek === 6) {
+    console.log(`⏭️ Skipping weekend day`);
     return shifts;
   }
-  
-  console.log(`🏗️ Building complete schedule for ${date}...`);
-  
-  // Filter workers available for this day (no PTO, valid working hours)
-  const availableWorkers = workers.filter(w => {
-    if (w.PTO && w.PTO.includes(date)) return false;
+
+  // Filter available workers with better logging
+  const availableWorkers = workers.filter(worker => {
+    console.log(`\n🔍 Checking ${worker.Name}:`);
     
-    const workHours = w["Working Hours"] || "";
-    const startTime = toMinutes(workHours.split('-')[0] || "0730");
-    const endTime = toMinutes(workHours.split('-')[1] || "1700");
+    // Check PTO
+    if (worker.PTO && worker.PTO.includes(date)) {
+      console.log(`   ❌ On PTO`);
+      return false;
+    }
     
-    return startTime < endTime && endTime > 480; // Must work past 8am
+    // Check working hours
+    const { start, end } = getWorkingHours(worker);
+    if (start >= end) {
+      console.log(`   ❌ Invalid working hours (start >= end)`);
+      return false;
+    }
+    
+    console.log(`   ✅ Available`);
+    return true;
   });
 
-  // Separate workers by primary abilities and availability
+  console.log(`\n👥 Available workers: ${availableWorkers.length}/${workers.length}`);
+  availableWorkers.forEach(w => console.log(`   - ${w.Name} (${w["Primary Ability"]})`));
+
+  if (availableWorkers.length === 0) {
+    console.log(`❌ No workers available for ${date}`);
+    return shifts;
+  }
+
+  // Build core coverage (8am-5pm: 3 Reservations + 1 Dispatch)
+  console.log(`\n🎯 Building core coverage (8am-5pm)...`);
+  
+  // Get Reservations workers
   const reservationsWorkers = availableWorkers.filter(w => 
-    w.Name !== 'Antje' && // Antje only does Journey Desk
+    w.Name !== 'Antje' && 
     (w["Primary Ability"] === 'Reservations' || w["Secondary Ability"] === 'Reservations')
   );
   
+  console.log(`📞 Reservations workers: ${reservationsWorkers.length}`);
+  reservationsWorkers.forEach(w => console.log(`   - ${w.Name} (${w["Primary Ability"]})`));
+
+  // Schedule 3 Reservations workers for core hours
+  const selectedReservations = reservationsWorkers.slice(0, 3);
+  selectedReservations.forEach((worker, index) => {
+    const { start, end } = getWorkingHours(worker);
+    
+    // Core hours: 8am-5pm (480-1020 minutes)
+    const shiftStart = Math.max(480, start);
+    const shiftEnd = Math.min(1020, end);
+    
+    if (shiftEnd > shiftStart) {
+      shifts.push({
+        Date: date,
+        Role: 'Reservations',
+        Start: shiftStart,
+        End: shiftEnd,
+        Worker: worker.Name,
+        Notes: `Core Reservations ${index + 1}/3`
+      });
+      console.log(`   ✅ ${worker.Name}: Reservations ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
+    }
+  });
+
+  // Get Dispatch workers
   const dispatchWorkers = availableWorkers.filter(w => 
-    w.Name !== 'Antje' &&
+    w.Name !== 'Antje' && 
     (w["Primary Ability"] === 'Dispatch' || w["Secondary Ability"] === 'Dispatch')
   );
+  
+  console.log(`🚨 Dispatch workers: ${dispatchWorkers.length}`);
+  dispatchWorkers.forEach(w => console.log(`   - ${w.Name} (${w["Primary Ability"]})`));
 
-  console.log(`👥 Available workers: ${availableWorkers.length} total, ${reservationsWorkers.length} reservations, ${dispatchWorkers.length} dispatch`);
-
-  // STEP 1: Build core coverage schedule (8am-9pm)
-  const buildCoreSchedule = () => {
-    // Priority order: Primary ability workers first, then secondary
-    const primaryRes = reservationsWorkers.filter(w => w["Primary Ability"] === 'Reservations');
-    const secondaryRes = reservationsWorkers.filter(w => w["Secondary Ability"] === 'Reservations');
-    const allRes = [...primaryRes, ...secondaryRes].slice(0, 5); // Take up to 5 workers
+  // Schedule 1 Dispatch worker
+  if (dispatchWorkers.length > 0) {
+    const dispatchWorker = dispatchWorkers[0];
+    const { start, end } = getWorkingHours(dispatchWorker);
     
-    const primaryDisp = dispatchWorkers.filter(w => w["Primary Ability"] === 'Dispatch');
-    const secondaryDisp = dispatchWorkers.filter(w => w["Secondary Ability"] === 'Dispatch');
-    const allDisp = [...primaryDisp, ...secondaryDisp].slice(0, 2); // Take up to 2 workers
-
-    // Schedule Reservations workers for overlapping coverage
-    allRes.forEach((worker, index) => {
-      const workHours = worker["Working Hours"] || "0730-1700";
-      const [startStr, endStr] = workHours.split('-');
-      let workStart = Math.max(480, toMinutes(startStr)); // Start at 8am or later
-      let workEnd = Math.min(1260, toMinutes(endStr));   // End at 9pm or earlier
-
-      // Stagger start times for better coverage
-      if (index === 1) workStart = Math.max(workStart, 510); // 8:30am
-      if (index === 2) workStart = Math.max(workStart, 540); // 9:00am
-      
-      // Ensure minimum 4-hour shifts
-      if (workEnd - workStart >= 240) {
-        shifts.push({
-          Date: date,
-          Role: 'Reservations',
-          Start: workStart,
-          End: workEnd,
-          Worker: worker.Name,
-          Notes: `Core coverage - ${index + 1}/3`
-        });
-      }
-    });
-
-    // Schedule Dispatch workers for extended coverage
-    allDisp.forEach((worker, index) => {
-      const workHours = worker["Working Hours"] || "0730-1700";
-      const [startStr, endStr] = workHours.split('-');
-      let workStart = Math.max(480, toMinutes(startStr));
-      let workEnd = Math.min(1260, toMinutes(endStr));
-
-      // Primary dispatch gets longer hours
-      if (index === 0) {
-        workEnd = Math.min(1260, toMinutes(endStr)); // Full available hours
-      } else {
-        // Secondary dispatch covers gaps or evening
-        workStart = Math.max(workStart, 1020); // Start at 5pm if possible
-      }
-
-      if (workEnd - workStart >= 240) {
-        shifts.push({
-          Date: date,
-          Role: 'Dispatch',
-          Start: workStart,
-          End: workEnd,
-          Worker: worker.Name,
-          Notes: `${index === 0 ? 'Primary' : 'Secondary'} dispatch coverage`
-        });
-      }
-    });
-  };
-
-  // STEP 2: Fill coverage gaps intelligently
-  const fillCoverageGaps = () => {
-    console.log(`🔍 Analyzing coverage gaps...`);
+    // Extended hours for dispatch
+    const shiftStart = Math.max(480, start);
+    const shiftEnd = Math.min(1260, end); // Up to 9pm
     
-    // Check each 30-minute slot from 8am-9pm
-    for (let time = 480; time < 1260; time += 30) {
-      const timeEnd = time + 30;
-      
-      const activeReservations = shifts.filter(s => 
-        s.Start <= time && s.End > time && s.Role === 'Reservations'
-      ).length;
-      
-      const activeDispatch = shifts.filter(s => 
-        s.Start <= time && s.End > time && s.Role === 'Dispatch'
-      ).length;
-      
-      const timeStr = toTimeString(time);
-      
-      // Daytime (8am-5pm): Need exactly 3 Reservations + 1 Dispatch
-      if (time >= 480 && time < 1020) {
-        if (activeReservations < 3) {
-          // Find available worker to extend or add reservations shift
-          const needReservations = 3 - activeReservations;
-          for (let i = 0; i < needReservations; i++) {
-            addOrExtendShift('Reservations', time, timeEnd, `Gap fill ${timeStr}`);
-          }
-        }
-        
-        if (activeDispatch < 1) {
-          addOrExtendShift('Dispatch', time, timeEnd, `Gap fill ${timeStr}`);
-        }
-      }
-      
-      // Evening (5pm-9pm): Need at least 2 Reservations + 1 Dispatch
-      else if (time >= 1020) {
-        if (activeReservations < 2) {
-          const needReservations = 2 - activeReservations;
-          for (let i = 0; i < needReservations; i++) {
-            addOrExtendShift('Reservations', time, timeEnd, `Evening coverage ${timeStr}`);
-          }
-        }
-        
-        if (activeDispatch < 1) {
-          addOrExtendShift('Dispatch', time, timeEnd, `Evening coverage ${timeStr}`);
-        }
-      }
+    if (shiftEnd > shiftStart) {
+      shifts.push({
+        Date: date,
+        Role: 'Dispatch',
+        Start: shiftStart,
+        End: shiftEnd,
+        Worker: dispatchWorker.Name,
+        Notes: 'Primary Dispatch coverage'
+      });
+      console.log(`   ✅ ${dispatchWorker.Name}: Dispatch ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
     }
-  };
-
-  // Helper function to add or extend shifts
-  const addOrExtendShift = (role, startTime, endTime, notes) => {
-    const targetWorkers = role === 'Reservations' ? reservationsWorkers : dispatchWorkers;
-    
-    // First try to extend an existing worker's shift
-    for (const worker of targetWorkers) {
-      const workHours = worker["Working Hours"] || "0730-1700";
-      const [workStartStr, workEndStr] = workHours.split('-');
-      const workStart = toMinutes(workStartStr);
-      const workEnd = toMinutes(workEndStr);
-      
-      // Check if worker is available during this time
-      if (startTime >= workStart && endTime <= workEnd) {
-        const existingShift = shifts.find(s => 
-          s.Worker === worker.Name && s.Role === role && 
-          (Math.abs(s.End - startTime) <= 30 || Math.abs(s.Start - endTime) <= 30)
-        );
-        
-        if (existingShift) {
-          // Extend existing shift
-          existingShift.Start = Math.min(existingShift.Start, startTime);
-          existingShift.End = Math.max(existingShift.End, endTime);
-          existingShift.Notes += ` + Extended for ${notes}`;
-          return;
-        }
-        
-        // Check if worker doesn't already have a conflicting shift
-        const hasConflict = shifts.some(s => 
-          s.Worker === worker.Name && s.Start < endTime && s.End > startTime
-        );
-        
-        if (!hasConflict) {
-          // Add new shift
-          shifts.push({
-            Date: date,
-            Role: role,
-            Start: startTime,
-            End: endTime,
-            Worker: worker.Name,
-            Notes: notes
-          });
-          return;
-        }
-      }
-    }
-  };
-
-  // STEP 3: Schedule lunches
-  const scheduleLunches = () => {
-    const lunchWindows = [
-      { start: 660, end: 750 },   // 11:00-12:30
-      { start: 720, end: 810 },   // 12:00-13:30  
-      { start: 750, end: 840 }    // 12:30-14:00
-    ];
-    
-    let lunchWindowIndex = 0;
-    
-    for (const worker of availableWorkers) {
-      const workerShifts = shifts.filter(s => s.Worker === worker.Name && s.Role !== 'Lunch');
-      if (workerShifts.length === 0) continue;
-      
-      // Special case for Katy (Reno) - 15:00-16:00 lunch
-      if (worker.Name === 'Katy') {
-        shifts.push({
-          Date: date,
-          Role: 'Lunch',
-          Start: 900, // 15:00
-          End: 960,   // 16:00
-          Worker: worker.Name,
-          Notes: 'Reno lunch time'
-        });
-      } else {
-        // Standard lunch windows for Greenville staff
-        const lunchWindow = lunchWindows[lunchWindowIndex % lunchWindows.length];
-        
-        // Make sure lunch doesn't conflict with critical coverage
-        let lunchStart = lunchWindow.start;
-        let lunchEnd = lunchWindow.end;
-        
-        shifts.push({
-          Date: date,
-          Role: 'Lunch',
-          Start: lunchStart,
-          End: lunchEnd,
-          Worker: worker.Name,
-          Notes: 'Standard lunch break'
-        });
-        lunchWindowIndex++;
-      }
-    }
-  };
-
-  // STEP 4: Fill specialist time
-  const fillSpecialistTime = () => {
-    for (const worker of availableWorkers) {
-      // Special case: Antje only works Journey Desk
-      if (worker.Name === 'Antje') {
-        const workHours = worker["Working Hours"] || "0730-1330";
-        const [startStr, endStr] = workHours.split('-');
-        const workStart = toMinutes(startStr);
-        const workEnd = toMinutes(endStr);
-        
-        shifts.push({
-          Date: date,
-          Role: 'Journey Desk',
-          Start: workStart,
-          End: workEnd,
-          Worker: worker.Name,
-          Notes: `Specialist role - Journey Desk only`
-        });
-        continue;
-      }
-
-      // For others, allocate specialist time based on their target hours
-      const targetHours = parseInt(worker["Target Number of Time not on Dispatch or Reservations"] || 0);
-      if (targetHours <= 0) continue;
-
-      // Find their specialist role (first ability that isn't Reservations or Dispatch)
-      const abilities = [
-        worker["Primary Ability"],
-        worker["Secondary Ability"], 
-        worker["Tertiary Ability"]
-      ].filter(ability => ability && ability !== "Reservations" && ability !== "Dispatch");
-      
-      const specialistRole = abilities[0];
-      if (!specialistRole) continue;
-
-      // Calculate daily specialist time (weekly hours / 5 days)
-      const dailySpecialistHours = targetHours / 5;
-      const specialistMinutes = Math.round(dailySpecialistHours * 60);
-      
-      if (specialistMinutes > 60) { // Only schedule if at least 1 hour
-        const workHours = worker["Working Hours"] || "0730-1700";
-        const [startStr, endStr] = workHours.split('-');
-        const workStart = toMinutes(startStr);
-        
-        // Schedule specialist time at start of day before core coverage
-        const specialistEnd = Math.min(workStart + specialistMinutes, workStart + 480); // Max 8 hours
-        
-        if (specialistEnd > workStart) {
-          shifts.push({
-            Date: date,
-            Role: specialistRole,
-            Start: workStart,
-            End: specialistEnd,
-            Worker: worker.Name,
-            Notes: `Specialist time - ${targetHours}h/week target`
-          });
-        }
-      }
-    }
-  };
-
-  // Execute all scheduling steps
-  try {
-    buildCoreSchedule();
-    fillCoverageGaps();
-    scheduleLunches();
-    fillSpecialistTime();
-    
-    console.log(`✅ Generated ${shifts.length} shifts for ${date}`);
-    
-    // Final validation
-    const violations = validateCoverage(shifts, date);
-    if (violations.length > 0) {
-      console.warn(`⚠️ Coverage violations still exist:`, violations.slice(0, 3));
-    } else {
-      console.log(`🎯 Perfect coverage achieved for ${date}`);
-    }
-    
-    return shifts;
-  } catch (error) {
-    console.error(`❌ Error generating schedule for ${date}:`, error);
-    return [];
   }
+
+  // Fill evening coverage (5pm-9pm: 2+ Reservations + 1 Dispatch)
+  console.log(`\n🌆 Building evening coverage (5pm-9pm)...`);
+  
+  const eveningWorkers = availableWorkers.filter(worker => {
+    const { end } = getWorkingHours(worker);
+    return end > 1020 && worker.Name !== 'Antje'; // Works past 5pm
+  });
+
+  console.log(`🌙 Evening workers: ${eveningWorkers.length}`);
+  eveningWorkers.forEach(w => console.log(`   - ${w.Name}`));
+
+  // Add evening Reservations coverage
+  const additionalEvening = eveningWorkers
+    .filter(w => !shifts.some(s => s.Worker === w.Name)) // Not already scheduled
+    .slice(0, 2); // Add up to 2 more
+
+  additionalEvening.forEach(worker => {
+    const { start, end } = getWorkingHours(worker);
+    const shiftStart = Math.max(1020, start); // Start at 5pm or later
+    const shiftEnd = Math.min(1260, end); // Up to 9pm
+    
+    if (shiftEnd > shiftStart) {
+      shifts.push({
+        Date: date,
+        Role: 'Reservations',
+        Start: shiftStart,
+        End: shiftEnd,
+        Worker: worker.Name,
+        Notes: 'Evening Reservations coverage'
+      });
+      console.log(`   ✅ ${worker.Name}: Evening Reservations ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
+    }
+  });
+
+  // Schedule lunches using new format
+  console.log(`\n🍽️ Scheduling lunches...`);
+  
+  // Get all workers who have shifts today
+  const workingToday = [...new Set(shifts.map(s => s.Worker))];
+  console.log(`🍽️ Workers needing lunch: ${workingToday.length}`);
+  
+  workingToday.forEach(workerName => {
+    const worker = availableWorkers.find(w => w.Name === workerName);
+    if (!worker) return;
+    
+    const lunchHours = getLunchHours(worker);
+    
+    if (lunchHours) {
+      // Use specified lunch hours
+      shifts.push({
+        Date: date,
+        Role: 'Lunch',
+        Start: lunchHours.start,
+        End: lunchHours.end,
+        Worker: worker.Name,
+        Notes: 'Scheduled lunch break'
+      });
+      console.log(`   🍽️ ${worker.Name}: Lunch ${toTimeString(lunchHours.start)}-${toTimeString(lunchHours.end)}`);
+    } else {
+      // Default lunch scheduling logic for workers without specified lunch times
+      const defaultLunchWindows = [
+        { start: 660, end: 750, name: "11:00-12:30" },
+        { start: 720, end: 810, name: "12:00-13:30" },
+        { start: 750, end: 840, name: "12:30-14:00" }
+      ];
+      
+      const lunchWindow = defaultLunchWindows[Math.floor(Math.random() * defaultLunchWindows.length)];
+      shifts.push({
+        Date: date,
+        Role: 'Lunch',
+        Start: lunchWindow.start,
+        End: lunchWindow.end,
+        Worker: worker.Name,
+        Notes: `Default lunch ${lunchWindow.name}`
+      });
+      console.log(`   🍽️ ${worker.Name}: Default lunch ${lunchWindow.name}`);
+    }
+  });
+
+  // Schedule specialist time
+  console.log(`\n🎯 Scheduling specialist time...`);
+  
+  availableWorkers.forEach(worker => {
+    // Special case: Antje only works Journey Desk
+    if (worker.Name === 'Antje') {
+      const { start, end } = getWorkingHours(worker);
+      shifts.push({
+        Date: date,
+        Role: 'Journey Desk',
+        Start: start,
+        End: end,
+        Worker: worker.Name,
+        Notes: 'Journey Desk specialist'
+      });
+      console.log(`   🎯 ${worker.Name}: Journey Desk ${toTimeString(start)}-${toTimeString(end)}`);
+      return;
+    }
+
+    // For others, check if they have specialist time
+    const targetHours = parseInt(worker.TargetNumber || worker["Target Number of Time not on Dispatch or Reservations"] || 0);
+    if (targetHours <= 0) return;
+
+    // Find their specialist role
+    const abilities = [
+      worker["Primary Ability"],
+      worker["Secondary Ability"], 
+      worker["Tertiary Ability"]
+    ].filter(ability => ability && ability !== "Reservations" && ability !== "Dispatch");
+    
+    const specialistRole = abilities[0];
+    if (!specialistRole) return;
+
+    // Calculate daily specialist time (weekly hours / 5 days)
+    const dailyHours = targetHours / 5;
+    const specialistMinutes = Math.round(dailyHours * 60);
+    
+    if (specialistMinutes >= 60) { // At least 1 hour
+      const { start } = getWorkingHours(worker);
+      const specialistEnd = start + specialistMinutes;
+      
+      shifts.push({
+        Date: date,
+        Role: specialistRole,
+        Start: start,
+        End: specialistEnd,
+        Worker: worker.Name,
+        Notes: `Specialist time (${targetHours}h/week)`
+      });
+      console.log(`   🎯 ${worker.Name}: ${specialistRole} ${toTimeString(start)}-${toTimeString(specialistEnd)}`);
+    }
+  });
+
+  // Final summary
+  console.log(`\n📊 Schedule Summary for ${date}:`);
+  console.log(`   Total shifts: ${shifts.length}`);
+  const shiftsByRole = {};
+  shifts.forEach(s => {
+    shiftsByRole[s.Role] = (shiftsByRole[s.Role] || 0) + 1;
+  });
+  Object.entries(shiftsByRole).forEach(([role, count]) => {
+    console.log(`   ${role}: ${count}`);
+  });
+
+  // Validate coverage
+  const violations = validateCoverage(shifts, date);
+  if (violations.length > 0) {
+    console.warn(`⚠️ Coverage violations:`, violations.slice(0, 5));
+  } else {
+    console.log(`✅ All coverage requirements met!`);
+  }
+  
+  return shifts;
 };
 
 /* Utilities ----------------------------------------------------------------- */
@@ -650,8 +647,6 @@ const getOpenAI = () => {
   return openaiClient;
 };
 
-// Enhanced system prompt for app.js - replace ADVANCED_SYSTEM_PROMPT
-
 const ADVANCED_SYSTEM_PROMPT = `
 You are Fortis SchedulerBot, an expert workforce scheduling assistant that AUTOMATICALLY FIXES problems instead of just reporting them.
 
@@ -826,8 +821,6 @@ const ADVANCED_FUNCTION_TOOLS = [
     }
   }
 ];
-
-// Enhanced chat endpoint for app.js - replace the existing /api/chat endpoint
 
 app.post("/api/chat", async (req, res) => {
   const userMessage = req.body.message?.trim();
