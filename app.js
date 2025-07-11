@@ -655,12 +655,13 @@ app.post("/api/shifts/bulk", async (req, res) => {
   }
 });
 
-/* OpenAI Chat Integration --------------------------------------------------- */
+/* OpenAI Chat Integration - FIXED ERROR HANDLING --------------------------------------------------- */
 let openaiClient;
 const getOpenAI = () => {
   if (!openaiClient) {
     if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY environment variable is required");
+      console.warn("⚠️ OPENAI_API_KEY not configured - chat will work in basic mode");
+      return null;
     }
     openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
@@ -853,6 +854,25 @@ app.post("/api/chat", async (req, res) => {
     // Log user message
     await addChatMessage("user", userMessage);
 
+    // Check if OpenAI is configured
+    const openai = getOpenAI();
+    if (!openai) {
+      // Fallback response when OpenAI is not configured
+      const fallbackResponse = `I understand you want help with "${userMessage}". 
+      
+While I'd love to help with AI-powered scheduling, I need an OpenAI API key to be configured. 
+
+For now, you can:
+🔧 Manually create shifts using the day view (drag to create, double-click to edit)
+📅 Use the week view to see the big picture
+⚙️ Manage workers and PTO in the Admin section
+
+Ask your administrator to add the OPENAI_API_KEY environment variable in Vercel to enable full AI assistance!`;
+
+      await addChatMessage("bot", fallbackResponse);
+      return res.json({ reply: fallbackResponse });
+    }
+
     // Get fresh data from Google Sheets for context
     let [workers, shifts] = await Promise.all([
       listWorkers(),
@@ -939,7 +959,7 @@ Available Workers: ${workers.map(w => w.Name).join(', ')}
 User Request: ${userMessage}
     `.trim();
 
-    const completion = await getOpenAI().chat.completions.create({
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: ADVANCED_SYSTEM_PROMPT },
@@ -1148,9 +1168,20 @@ User Request: ${userMessage}
     console.error("❌ Chat error:", error);
     await addChatMessage("bot", "[error]");
     
+    // More specific error handling
+    let errorMessage = "I'm having trouble right now. Please try again.";
+    
+    if (error.message.includes('insufficient_quota')) {
+      errorMessage = "⚠️ OpenAI quota exceeded. Please check your API usage or try again later.";
+    } else if (error.message.includes('invalid_api_key')) {
+      errorMessage = "⚠️ OpenAI API key is invalid. Please check your configuration.";
+    } else if (error.message.includes('rate_limit')) {
+      errorMessage = "⚠️ Too many requests. Please wait a moment and try again.";
+    }
+    
     res.status(500).json({ 
-      error: "I'm having trouble right now. Please try again.",
-      details: error.message 
+      error: errorMessage,
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
