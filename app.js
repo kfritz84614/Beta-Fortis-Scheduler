@@ -232,15 +232,15 @@ const generateDaySchedule = async (date, workers) => {
     
     if (shiftEnd > shiftStart) {
       if (!hasOverlap(shifts, { Worker: worker.Name, Date: date, Start: shiftStart, End: shiftEnd })) {
-  shifts.push({
-    Date: date,
-    Role: 'Reservations',
-    Start: shiftStart,
-    End: shiftEnd,
-    Worker: worker.Name,
-    Notes: `Core Reservations ${index + 1}/3`
-  });
-}
+        shifts.push({
+          Date: date,
+          Role: 'Reservations',
+          Start: shiftStart,
+          End: shiftEnd,
+          Worker: worker.Name,
+          Notes: `Core Reservations ${index + 1}/3`
+        });
+      }
       console.log(`   ✅ ${worker.Name}: Reservations ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
     }
   });
@@ -265,15 +265,15 @@ const generateDaySchedule = async (date, workers) => {
     
     if (shiftEnd > shiftStart) {
       if (!hasOverlap(shifts, { Worker: dispatchWorker.Name, Date: date, Start: shiftStart, End: shiftEnd })) {
-  shifts.push({
-    Date: date,
-    Role: 'Dispatch',
-    Start: shiftStart,
-    End: shiftEnd,
-    Worker: dispatchWorker.Name,
-    Notes: 'Primary Dispatch coverage'
-  });
-}
+        shifts.push({
+          Date: date,
+          Role: 'Dispatch',
+          Start: shiftStart,
+          End: shiftEnd,
+          Worker: dispatchWorker.Name,
+          Notes: 'Primary Dispatch coverage'
+        });
+      }
       console.log(`   ✅ ${dispatchWorker.Name}: Dispatch ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
     }
   }
@@ -301,15 +301,15 @@ const generateDaySchedule = async (date, workers) => {
     
     if (shiftEnd > shiftStart) {
       if (!hasOverlap(shifts, { Worker: worker.Name, Date: date, Start: shiftStart, End: shiftEnd })) {
-  shifts.push({
-    Date: date,
-    Role: 'Reservations',
-    Start: shiftStart,
-    End: shiftEnd,
-    Worker: worker.Name,
-    Notes: 'Evening Reservations coverage'
-  });
-}
+        shifts.push({
+          Date: date,
+          Role: 'Reservations',
+          Start: shiftStart,
+          End: shiftEnd,
+          Worker: worker.Name,
+          Notes: 'Evening Reservations coverage'
+        });
+      }
       console.log(`   ✅ ${worker.Name}: Evening Reservations ${toTimeString(shiftStart)}-${toTimeString(shiftEnd)}`);
     }
   });
@@ -330,15 +330,15 @@ const generateDaySchedule = async (date, workers) => {
     if (lunchHours) {
       // Use specified lunch hours
       if (!hasOverlap(shifts, { Worker: worker.Name, Date: date, Start: lunchHours.start, End: lunchHours.end })) {
-  shifts.push({
-    Date: date,
-    Role: 'Lunch',
-    Start: lunchHours.start,
-    End: lunchHours.end,
-    Worker: worker.Name,
-    Notes: 'Scheduled lunch break'
-  });
-}
+        shifts.push({
+          Date: date,
+          Role: 'Lunch',
+          Start: lunchHours.start,
+          End: lunchHours.end,
+          Worker: worker.Name,
+          Notes: 'Scheduled lunch break'
+        });
+      }
       console.log(`   🍽️ ${worker.Name}: Lunch ${toTimeString(lunchHours.start)}-${toTimeString(lunchHours.end)}`);
     } else {
       // Default lunch scheduling logic for workers without specified lunch times
@@ -349,17 +349,16 @@ const generateDaySchedule = async (date, workers) => {
       ];
       
       const lunchWindow = defaultLunchWindows[Math.floor(Math.random() * defaultLunchWindows.length)];
-      shifts.push({
-        if (!hasOverlap(shifts, { Worker: worker.Name, Date: date, Start: lunchHours.start, End: lunchHours.end })) {
-  shifts.push({
-    Date: date,
-    Role: 'Lunch',
-    Start: lunchHours.start,
-    End: lunchHours.end,
-    Worker: worker.Name,
-    Notes: 'Scheduled lunch break'
-  });
-}
+      if (!hasOverlap(shifts, { Worker: worker.Name, Date: date, Start: lunchWindow.start, End: lunchWindow.end })) {
+        shifts.push({
+          Date: date,
+          Role: 'Lunch',
+          Start: lunchWindow.start,
+          End: lunchWindow.end,
+          Worker: worker.Name,
+          Notes: 'Default lunch break'
+        });
+      }
       console.log(`   🍽️ ${worker.Name}: Default lunch ${lunchWindow.name}`);
     }
   });
