@@ -134,12 +134,12 @@ let weekStart = new Date(); // Monday of current week
 const dayView    = document.getElementById("dayView");
 const weekView   = document.getElementById("weekView");
 const wrap       = document.getElementById("wrap");
-const dateH      = document.getElementById("date");
-const prevBtn    = document.getElementById("prev");
-const nextBtn    = document.getElementById("next");
+const dateH      = document.getElementById("dateH");
+const prevBtn    = document.getElementById("prevBtn");
+const nextBtn    = document.getElementById("nextBtn");
 const todayBtn   = document.getElementById("todayBtn");
-const dayViewBtn = document.getElementById("dayViewBtn");
-const weekViewBtn= document.getElementById("weekViewBtn");
+const dayViewBtn = document.getElementById("dayBtn");
+const weekViewBtn= document.getElementById("weekBtn");
 const empDl      = document.getElementById("workerList");
 
 /***** VIEW TOGGLE *****/
@@ -149,14 +149,18 @@ const setView = (view) => {
   if (view === 'day') {
     dayView.classList.remove('hidden');
     weekView.classList.add('hidden');
-    dayViewBtn.classList.add('active');
-    weekViewBtn.classList.remove('active');
+    dayViewBtn.classList.remove('bg-gray-200');
+    dayViewBtn.classList.add('bg-blue-600', 'text-white');
+    weekViewBtn.classList.remove('bg-blue-600', 'text-white');
+    weekViewBtn.classList.add('bg-gray-200');
     draw();
   } else {
     dayView.classList.add('hidden');
     weekView.classList.remove('hidden');
-    dayViewBtn.classList.remove('active');
-    weekViewBtn.classList.add('active');
+    dayViewBtn.classList.remove('bg-blue-600', 'text-white');
+    dayViewBtn.classList.add('bg-gray-200');
+    weekViewBtn.classList.remove('bg-gray-200');
+    weekViewBtn.classList.add('bg-blue-600', 'text-white');
     drawWeek();
   }
 };
@@ -408,10 +412,6 @@ function draw(){
     }
   });
 
-  dateH.textContent=day.toDateString(); 
-  location.hash=iso(day);
-  
-  // Update coverage analysis
   updateCoverageDisplay();
 }
 
