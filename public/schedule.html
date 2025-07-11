@@ -1,278 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Fortis • Schedule</title>
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Tailwind tweaks for the schedule grid -->
   <style>
-    /* Day View Grid Styles */
+    /* Day‑view grid: 150 px fixed name column + 24 equal hour columns */
     .day-grid {
       display: grid;
       grid-template-columns: 150px repeat(24, 1fr);
       min-width: 1400px;
     }
 
-    /* Week View Grid Styles */
+    /* Week‑view grid (5 weekdays) */
     .week-grid {
       display: grid;
       grid-template-columns: 150px repeat(5, 1fr);
-      min-width: 1000px;
-    }
-
-    .week-day-column {
-      border-right: 2px solid #e5e7eb;
-      /* ⬇️ WAS: min-height: 600px; – that forced the header row tall */
-      min-height: auto;
-      position: relative;
-    }
-
-    .week-day-header {
-      background: #1f2937;
-      color: white;
-      padding: 8px;
-      text-align: center;
-      font-weight: bold;
-      border-bottom: 1px solid #374151;
-    }
-
-    .week-day-content {
-      padding: 4px;
-      height: 100%;
-      position: relative;
-    }
-
-    /* Shared Grid Styles */
-    .rowLabel {
-      grid-column: 1;
-      background: #f3f4f6;
-      border-bottom: 1px solid #ddd;
-      padding: 2px 4px;
-      font-size: .75rem;
-    }
-
-    .cell {
-      border-bottom: 1px solid #eee;
-      border-right: 1px solid #eee;
+      grid-auto-rows: 36px; /* header row height */
+      min-width: 1200px;
     }
 
     .band {
       position: relative;
-      height: 100%;
-      border-bottom: 1px solid #eee;
-      pointer-events: none;
     }
-
-    .day-band {
-      grid-column: 2/-1;
-    }
-
     .block {
       position: absolute;
-      top: 2px;
-      bottom: 2px;
-      border-radius: 3px;
-      font-size: .65rem;
-      line-height: 1rem;
-      padding-left: 4px;
-      color: #fff;
-      cursor: pointer;
-      pointer-events: auto;
-      overflow: hidden;
+      font-size: 10px;
       white-space: nowrap;
-    }
-
-    .week-block {
-      position: absolute;
-      left: 2px;
-      right: 2px;
+      overflow: hidden;
+      color: #fff;
+      padding-left: 2px;
       border-radius: 2px;
-      font-size: .6rem;
-      line-height: 1.2;
-      padding: 1px 2px;
-      color: #fff;
-      cursor: pointer;
-      margin-bottom: 1px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .dragBox {
-      position: absolute;
-      background: rgba(59, 130, 246, .35);
-    }
-
-    #wrap {
-      overflow: auto;
-      max-width: 100vw;
-      max-height: 80vh;
-      /* ⬇️ Reserve space for the chat widget so the schedule never hides behind it */
-      margin-right: 20rem; /* ≈320px */
-    }
-
-    /* View Toggle Styles */
-    .view-toggle {
-      background: #e5e7eb;
-      border-radius: 8px;
-      padding: 4px;
-      display: flex;
-      gap: 4px;
-    }
-
-    .view-btn {
-      padding: 8px 16px;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-      font-weight: 500;
-      transition: all 0.2s;
-    }
-
-    .view-btn.active {
-      background: #3b82f6;
-      color: white;
-    }
-
-    .view-btn:not(.active) {
-      background: transparent;
-      color: #6b7280;
-    }
-
-    .view-btn:not(.active):hover {
-      background: #d1d5db;
-    }
-
-    /* Dialog styles */
-    #shiftDlg {
-      border: none;
-      border-radius: .5rem;
-      background: #fff;
-    }
-
-    #shiftDlg form {
-      width: 20rem;
-      padding: 1.5rem;
-    }
-
-    #shiftDlg .field {
-      margin-bottom: .75rem;
-    }
-
-    #shiftDlg label {
-      display: block;
-      margin-bottom: .25rem;
-      font-size: .875rem;
-    }
-
-    #shiftDlg input, #shiftDlg select, #shiftDlg textarea {
-      width: 100%;
-      padding: .5rem;
-      font-size: .875rem;
-      border: 1px solid #d1d5db;
-      border-radius: .25rem;
     }
   </style>
 </head>
-<body class="bg-gray-100">
-  <!-- Navigation -->
-  <header class="p-4 flex items-center gap-4 bg-white shadow">
-    <a href="/schedule.html" class="font-semibold">Schedule</a>
-    <a href="/index.html" class="text-blue-600">Workers</a>
-    <a href="/admin.html" class="text-blue-600">Admin</a>
+<body class="flex h-screen text-sm text-gray-800">
+  <!-- 📅 Left: schedule area -->
+  <div id="wrap" class="flex-1 overflow-auto p-4">
+    <!-- navbar -->
+    <nav class="mb-4 flex items-center gap-6">
+      <span class="text-lg font-semibold">Schedule</span>
+      <a href="/workers.html" class="text-blue-600 hover:underline">Workers</a>
+      <a href="/admin.html"   class="text-blue-600 hover:underline">Admin</a>
 
-    <!-- View Toggle -->
-    <div class="view-toggle ml-6">
-      <button id="dayViewBtn" class="view-btn active">Day View</button>
-      <button id="weekViewBtn" class="view-btn">Week View</button>
-    </div>
-
-    <!-- Navigation Controls -->
-    <div class="flex items-center gap-2 ml-auto">
-      <button id="prev"   class="px-3 py-1 bg-slate-200 rounded hover:bg-slate-300">‹</button>
-      <h1 id="date" class="text-xl font-bold px-4"></h1>
-      <button id="next"   class="px-3 py-1 bg-slate-200 rounded hover:bg-slate-300">›</button>
-      <button id="todayBtn" class="px-4 py-1 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700 ml-2">Today</button>
-    </div>
-  </header>
-
-  <!-- Schedule Grid Container -->
-  <div id="wrap" class="mx-auto bg-white shadow w-fit">
-    <!-- Day View Grid -->
-    <div id="dayView" class="day-grid"></div>
-
-    <!-- Week View Grid -->
-    <div id="weekView" class="week-grid hidden">
-      <div class="rowLabel" style="grid-row: 1;">Workers</div>
-
-      <!-- Week day headers -->
-      <div class="week-day-column" style="grid-column: 2;">
-        <div class="week-day-header" id="weekDay0">Monday</div>
-        <div class="week-day-content" id="weekContent0"></div>
+      <div class="ml-auto flex gap-2">
+        <button id="dayBtn"   class="px-3 py-1 rounded-lg bg-blue-600 text-white">Day View</button>
+        <button id="weekBtn"  class="px-3 py-1 rounded-lg bg-gray-200">Week View</button>
       </div>
+    </nav>
 
-      <div class="week-day-column" style="grid-column: 3;">
-        <div class="week-day-header" id="weekDay1">Tuesday</div>
-        <div class="week-day-content" id="weekContent1"></div>
-      </div>
-
-      <div class="week-day-column" style="grid-column: 4;">
-        <div class="week-day-header" id="weekDay2">Wednesday</div>
-        <div class="week-day-content" id="weekContent2"></div>
-      </div>
-
-      <div class="week-day-column" style="grid-column: 5;">
-        <div class="week-day-header" id="weekDay3">Thursday</div>
-        <div class="week-day-content" id="weekContent3"></div>
-      </div>
-
-      <div class="week-day-column" style="grid-column: 6;">
-        <div class="week-day-header" id="weekDay4">Friday</div>
-        <div class="week-day-content" id="weekContent4"></div>
-      </div>
-      <!-- Worker rows are added dynamically via JS -->
-    </div>
+    <!-- schedule canvases injected by schedule.js -->
+    <div id="scheduleCanvas"></div>
   </div>
 
-  <!-- Shift Dialog -->
-  <dialog id="shiftDlg">
-    <form id="shiftForm" method="dialog">
-      <input type="hidden" name="index">
-      <div class="field">
-        <label>Employee</label>
-        <input id="empSel" list="workerList" name="emp" placeholder="Start typing a name…" autocomplete="off" required>
-        <datalist id="workerList"></datalist>
-      </div>
-      <div class="field">
-        <label>Shift type</label>
-        <select id="roleSel" name="role"></select>
-      </div>
-      <div class="grid grid-cols-2 gap-4">
-        <div class="flex flex-col field">
-          <label>Start&nbsp;(24h)</label>
-          <input id="start" name="start" type="text" placeholder="0815" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
-        </div>
-        <div class="flex flex-col field">
-          <label>End&nbsp;(24h)</label>
-          <input id="end" name="end" type="text" placeholder="1245" pattern="^([01]?\d|2[0-3]):?[0-5]\d$" required>
-        </div>
-      </div>
-      <div class="field">
-        <label>Notes</label>
-        <textarea id="notes" name="notes" rows="2"></textarea>
-      </div>
-      <div class="flex justify-end gap-3 pt-1">
-        <button class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
-        <button type="button" id="del" class="bg-red-600 text-white px-3 py-1 rounded hidden">Delete</button>
-        <button type="button" id="cancel" class="bg-gray-400 text-white px-3 py-1 rounded">Cancel</button>
-      </div>
-    </form>
-  </dialog>
+  <!-- 🤖 Right: scheduling bot column -->
+  <div id="chatBox" class="w-80 border-l border-gray-200 h-full flex flex-col"></div>
 
-  <!-- Chat Widget Container → now fixed & sized with Tailwind, no inline style -->
-  <div id="chatBox" class="fixed bottom-4 right-4 w-80 z-50"></div>
-
-  <!-- Schedule Logic -->
-  <script type="module" src="schedule.js"></script>
+  <script type="module" src="/schedule.js"></script>
 </body>
 </html>
