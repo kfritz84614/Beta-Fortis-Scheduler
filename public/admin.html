@@ -35,6 +35,8 @@
       <thead class="bg-slate-800 text-white">
         <tr>
           <th class="p-2">Name</th>
+          <th class="p-2">Work Hours</th>
+          <th class="p-2">Lunch Hours</th>
           <th class="p-2">Primary</th>
           <th class="p-2">Secondary</th>
           <th class="p-2">Tertiary</th>
@@ -46,7 +48,7 @@
     </table>
 
     <!-- editor dialog -->
-    <dialog id="dlg" class="w-full max-w-lg rounded shadow">
+    <dialog id="dlg" class="w-full max-w-2xl rounded shadow">
       <form id="frm" method="dialog" class="p-6 space-y-4">
         <input type="hidden" name="__mode" value="edit">
 
@@ -54,28 +56,54 @@
           <label class="block">Name
             <input name="Name" required class="w-full p-2 border rounded">
           </label>
-          <label class="block">Working Hours
-            <input name="Working Hours" required class="w-full p-2 border rounded" placeholder="0730-1700">
+          <label class="block">Email
+            <input name="Email" type="email" class="w-full p-2 border rounded">
           </label>
-          <label class="block">Lunch Time
-            <input name="Lunch Time" class="w-full p-2 border rounded" placeholder="1230-1400">
+        </div>
+
+        <!-- NEW: Separate time fields -->
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="block">Work Start Time
+            <input name="WorkStartTime" type="time" required class="w-full p-2 border rounded" placeholder="07:30">
           </label>
-          <label class="block">Non-Disp/Res hrs
-            <input name="Target Number of Time not on Dispatch or Reservations" type="number" min="0" class="w-full p-2 border rounded">
+          <label class="block">Work End Time
+            <input name="WorkEndTime" type="time" required class="w-full p-2 border rounded" placeholder="17:00">
+          </label>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="block">Lunch Start Time
+            <input name="LunchStartTime" type="time" class="w-full p-2 border rounded" placeholder="12:30">
+          </label>
+          <label class="block">Lunch End Time
+            <input name="LunchEndTime" type="time" class="w-full p-2 border rounded" placeholder="14:00">
+          </label>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="block">Total Hours Per Week
+            <input name="TotalHoursWeek" type="number" min="0" max="60" class="w-full p-2 border rounded" placeholder="40">
+          </label>
+          <label class="block">Specialist Hours Per Week
+            <input name="TargetNumber" type="number" min="0" max="40" class="w-full p-2 border rounded" placeholder="5">
           </label>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">
-          <label class="block">Primary
+          <label class="block">Primary Ability
             <select name="Primary Ability" class="w-full p-2 border rounded"></select>
           </label>
-          <label class="block">Secondary
+          <label class="block">Secondary Ability
             <select name="Secondary Ability" class="w-full p-2 border rounded"></select>
           </label>
-          <label class="block">Tertiary
+          <label class="block">Tertiary Ability
             <select name="Tertiary Ability" class="w-full p-2 border rounded"></select>
           </label>
         </div>
+
+        <label class="block">Back Fill Order
+          <input name="BackFillOrder" type="number" min="1" class="w-full p-2 border rounded" placeholder="1">
+        </label>
 
         <div class="flex justify-end gap-3 pt-2">
           <button id="save-btn"  class="bg-blue-600 text-white px-4 py-1 rounded">Save</button>
