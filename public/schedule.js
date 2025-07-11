@@ -561,23 +561,8 @@ function placeBlock(s,idx,row,container){
   const band = container.querySelectorAll(".band")[row]; 
   if(!band) return;
   
-  // Clear any existing blocks for this worker at this time to prevent overlaps
-  const existingBlocks = band.querySelectorAll('.block');
-  existingBlocks.forEach(block => {
-    const blockLeft = parseFloat(block.style.left);
-    const blockWidth = parseFloat(block.style.width);
-    const blockRight = blockLeft + blockWidth;
-    
-    const shiftLeft = (s.start/1440*100);
-    const shiftWidth = ((s.end-s.start)/1440*100);
-    const shiftRight = shiftLeft + shiftWidth;
-    
-    // Check for overlap
-    if (!(shiftRight <= blockLeft || shiftLeft >= blockRight)) {
-      // There's an overlap - remove the existing block
-      block.remove();
-    }
-  });
+    // Offset vertically for any existing blocks so overlaps stack
+  const overlapCount = band.querySelectorAll('.block').length;
   
   const el=document.createElement("div"); 
   el.className="block";
@@ -585,6 +570,9 @@ function placeBlock(s,idx,row,container){
   el.style.width= `${(s.end-s.start)/1440*100}%`;
   el.style.background=COLORS[s.role]||"#2563eb";
   el.style.zIndex = s.role === 'Lunch' ? '10' : '5'; // Lunch on top
+  // NEW: vertical stacking for overlaps
+  el.style.top    = `${2 + overlapCount * 16}px`;        // base 2 px + 16 px per stack
+  el.style.height = '14px';                              // keep uniform height
   
   // Improve text display for small blocks
   const duration = s.end - s.start;
