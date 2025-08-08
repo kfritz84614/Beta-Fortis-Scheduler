@@ -898,21 +898,16 @@ Ask your administrator to add the OPENAI_API_KEY environment variable in Vercel 
       return summary;
     };
 
-    // Analyze coverage for context
-    const analyzeCoverageForDate = (dateShifts, date) => {
-      const violations = [];
-      
-      // Check core hours (8am-5pm)
-      for (let hour = 8; hour < 17; hour++) {
-        const timeStart = hour * 60;
-        const timeEnd = timeStart + 60;
-        
-        const activeShifts = dateShifts.filter(s => {
-          const start = typeof s.Start === 'number' ? s.Start : toMinutes(s.Start);
-          const end = typeof s.End === 'number' ? s.End : toMinutes(s.End);
-          return start < timeEnd && end > timeStart && s.Role !== 'Lunch';
-        });
-        
+    // ⬇️ REPLACE the whole analyzeCoverageForDate function in /api/chat with this:
+const analyzeCoverageForDate = (dateShifts, date) => {
+  // Reuse the strict validator defined above so reporting matches enforcement
+  return validateCoverage(dateShifts.map(s => ({
+    // make sure Start/End are minutes
+    ...s,
+    Start: typeof s.Start === 'number' ? s.Start : toMinutes(s.Start),
+    End:   typeof s.End   === 'number' ? s.End   : toMinutes(s.End),
+  })), date);
+};     
         const reservations = activeShifts.filter(s => s.Role === 'Reservations').length;
         const dispatch = activeShifts.filter(s => s.Role === 'Dispatch').length;
         
