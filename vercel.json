@@ -6,8 +6,6 @@
   },
   "routes": [
     { "src": "^/api/(.*)$", "dest": "/api/index.js" },
-
-    // Serve your static site from /public (what your app.js expects)
     { "src": "^/$", "dest": "/public/index.html" },
     { "src": "^/schedule.html$", "dest": "/public/schedule.html" },
     { "src": "^/admin.html$", "dest": "/public/admin.html" },
